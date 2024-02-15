@@ -1,0 +1,44 @@
+# http://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_size = 4
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+dotnet_analyzer_diagnostic.category-CodeQuality.severity = error
+dotnet_analyzer_diagnostic.category-Design.severity = error
+dotnet_analyzer_diagnostic.category-Documentation.severity = suggestion
+dotnet_analyzer_diagnostic.category-Globalization.severity = error
+dotnet_analyzer_diagnostic.category-Interoperability.severity = error
+dotnet_analyzer_diagnostic.category-Maintainability.severity = error
+dotnet_analyzer_diagnostic.category-Naming.severity = error
+dotnet_analyzer_diagnostic.category-Performance.severity = error
+dotnet_analyzer_diagnostic.category-Reliability.severity = error
+dotnet_analyzer_diagnostic.category-SingleFile.severity = error
+dotnet_analyzer_diagnostic.category-Security.severity = error
+dotnet_analyzer_diagnostic.category-Style.severity = error
+dotnet_analyzer_diagnostic.category-Usage.severity = error
+dotnet_analyzer_diagnostic.category-roslynator.severity = error
+
+dotnet_diagnostic.IDE0160.severity = none
+dotnet_diagnostic.CS1591.severity = none
+
+roslynator_max_line_length = 120
+dotnet_diagnostic.rcs0056.severity = suggestion
+
+[*.{js,json,yml,csproj,props}]
+indent_size = 2
+
+[.vscode/**.json]
+indent_size = 4
+
+[.devcontainer/devcontainer.json]
+indent_size = 4
+
+[.prettierrc]
+indent_size = 2

@@ -1,0 +1,31 @@
+namespace Dalmarkit.Blockchain.Constants;
+
+public enum BlockchainNetwork
+{
+    Algorand = 100010,
+    Aptos = 110010,
+    ArbitrumOne = 120010,
+    Aurora = 130010,
+    AvalancheCChain = 140010,
+    Base = 150010,
+    Bsc = 160010,
+    Cardano = 170010,
+    Core = 180010,
+    Cronos = 190010,
+    Ethereum = 200010,
+    FantomOpera = 210010,
+    Fuse = 220010,
+    LightlinkPhoenix = 230010,
+    MantaPacific = 240010,
+    Mantle = 250010,
+    Near = 260010,
+    Okt = 270010,
+    Optimism = 280010,
+    PolygonPos = 290010,
+    PolygonZkEvm = 300010,
+    Sei = 310010,
+    Solana = 320010,
+    Sui = 330010,
+    Ton = 340010,
+    ZkSyncEra = 350010,
+}

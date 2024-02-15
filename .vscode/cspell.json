@@ -1,0 +1,32 @@
+{
+    "version": "0.2",
+    "words": [
+        "algorand",
+        "aptos",
+        "arbitrum",
+        "aspnetcore",
+        "backoffice",
+        "cardano",
+        "cronos",
+        "dalmarkit",
+        "devcontainers",
+        "dotnetcli",
+        "dtos",
+        "hasher",
+        "lightlink",
+        "naptr",
+        "nethereum",
+        "npgsql",
+        "nupkg",
+        "paginators",
+        "pkcs",
+        "softprops",
+        "solana",
+        "webapi"
+    ],
+    "ignorePaths": [
+        "/.devcontainer/devcontainer.json",
+        "/.vscode/launch.json",
+        "/.vscode/tasks.json"
+    ]
+}
