@@ -1,0 +1,48 @@
+name: NuGet Publish
+
+on:
+  workflow_dispatch:
+
+jobs:
+  Deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Only for main or develop branch
+        if: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+        uses: actions/github-script@v7
+        with:
+          script: core.setFailed('Invalid branch - ${{ github.ref }}')
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET CLI
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install dependencies
+        run: dotnet restore
+      - name: Build solution
+        run: |
+          dotnet clean -c Release
+          dotnet build -c Release --no-restore /WarnAsError
+      - name: Run unit tests
+        run: dotnet test -c Release --no-build --no-restore
+      - name: Pack alpha NuGet packages for develop branch
+        if: github.ref == 'refs/heads/develop'
+        run: dotnet pack -c Release --no-build --no-restore --version-suffix alpha.${{github.run_number}}
+      - name: Pack release NuGet packages for main branch
+        if: github.ref == 'refs/heads/main'
+        id: pack-release-nupkg
+        run: |
+          dotnet pack -c Release --no-build --no-restore
+          echo "RELEASE_NUPKG_VERSION=$(sed -n 's/^[ \t]*<VersionPrefix>\(.*\)<\/VersionPrefix>[ \t]*$/\1/p' Directory.Build.props)" >> "$GITHUB_OUTPUT"
+      - name: Publish NuGet packages to nuget.org
+        run: |
+          dotnet nuget push src/*/bin/Release/*.nupkg -k ${{ secrets.NUGET_API_KEY }} -s https://api.nuget.org/v3/index.json
+      - name: Release for main branch
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: src/*/bin/Release/*.nupkg
+          tag_name: ${{ steps.pack-release-nupkg.outputs.RELEASE_NUPKG_VERSION }}

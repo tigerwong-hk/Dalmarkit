@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dalmarkit.Common\Dalmarkit.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.CloudFront" Version="3.7.301.42" />
+    <PackageReference Include="AWSSDK.CognitoIdentityProvider" Version="3.7.302.3" />
+    <PackageReference Include="AWSSDK.Route53" Version="3.7.302.15" />
+    <PackageReference Include="AWSSDK.S3" Version="3.7.305.24" />
+    <PackageReference Include="Roslynator.Analyzers" Version="4.10.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <PackageId>Dalmarkit.Cloud</PackageId>
+    <PackageTags>Dalmarkit AWS Cloud CloudFront Cognito Route53 S3</PackageTags>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

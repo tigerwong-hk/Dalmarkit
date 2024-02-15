@@ -1,0 +1,55 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".", ".", "{AEBC34C5-F957-4613-AD42-176DC64D58DD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalmarkit.AspNetCore", "src\Dalmarkit.AspNetCore\Dalmarkit.AspNetCore.csproj", "{F3E9610B-A22A-4685-8E57-EF39146964E3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalmarkit.Blockchain", "src\Dalmarkit.Blockchain\Dalmarkit.Blockchain.csproj", "{00C55390-EC3F-42EE-8BCD-B72093592099}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalmarkit.Cloud", "src\Dalmarkit.Cloud\Dalmarkit.Cloud.csproj", "{5A16DE9A-9E87-4E59-9D77-D1BE2E4A6D22}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalmarkit.Common", "src\Dalmarkit.Common\Dalmarkit.Common.csproj", "{0E14861E-9FA3-4802-AF02-3DB2375D41A1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalmarkit.EntityFrameworkCore", "src\Dalmarkit.EntityFrameworkCore\Dalmarkit.EntityFrameworkCore.csproj", "{0FE2B086-2D0C-4291-852B-24908A97ED91}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F3E9610B-A22A-4685-8E57-EF39146964E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F3E9610B-A22A-4685-8E57-EF39146964E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F3E9610B-A22A-4685-8E57-EF39146964E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F3E9610B-A22A-4685-8E57-EF39146964E3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00C55390-EC3F-42EE-8BCD-B72093592099}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00C55390-EC3F-42EE-8BCD-B72093592099}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00C55390-EC3F-42EE-8BCD-B72093592099}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00C55390-EC3F-42EE-8BCD-B72093592099}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5A16DE9A-9E87-4E59-9D77-D1BE2E4A6D22}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5A16DE9A-9E87-4E59-9D77-D1BE2E4A6D22}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5A16DE9A-9E87-4E59-9D77-D1BE2E4A6D22}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5A16DE9A-9E87-4E59-9D77-D1BE2E4A6D22}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0E14861E-9FA3-4802-AF02-3DB2375D41A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0E14861E-9FA3-4802-AF02-3DB2375D41A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0E14861E-9FA3-4802-AF02-3DB2375D41A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0E14861E-9FA3-4802-AF02-3DB2375D41A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0FE2B086-2D0C-4291-852B-24908A97ED91}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0FE2B086-2D0C-4291-852B-24908A97ED91}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0FE2B086-2D0C-4291-852B-24908A97ED91}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0FE2B086-2D0C-4291-852B-24908A97ED91}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{F3E9610B-A22A-4685-8E57-EF39146964E3} = {AEBC34C5-F957-4613-AD42-176DC64D58DD}
+		{00C55390-EC3F-42EE-8BCD-B72093592099} = {AEBC34C5-F957-4613-AD42-176DC64D58DD}
+		{5A16DE9A-9E87-4E59-9D77-D1BE2E4A6D22} = {AEBC34C5-F957-4613-AD42-176DC64D58DD}
+		{0E14861E-9FA3-4802-AF02-3DB2375D41A1} = {AEBC34C5-F957-4613-AD42-176DC64D58DD}
+		{0FE2B086-2D0C-4291-852B-24908A97ED91} = {AEBC34C5-F957-4613-AD42-176DC64D58DD}
+	EndGlobalSection
+EndGlobal
