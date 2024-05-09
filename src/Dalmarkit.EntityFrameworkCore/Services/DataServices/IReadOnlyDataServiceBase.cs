@@ -1,6 +1,6 @@
-using Dalmarkit.Common.Entities.DataModels;
+using Dalmarkit.Common.Entities.BaseEntities;
 
 namespace Dalmarkit.EntityFrameworkCore.Services.DataServices;
 
 public interface IReadOnlyDataServiceBase<TEntity> : IDataServiceBase<TEntity>
-    where TEntity : class, IDataModelReadOnly;
+    where TEntity : ReadOnlyEntityBase;
