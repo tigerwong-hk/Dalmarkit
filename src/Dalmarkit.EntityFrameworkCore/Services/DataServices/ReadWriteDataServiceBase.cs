@@ -1,14 +1,14 @@
 using Dalmarkit.Common.AuditTrail;
-using Dalmarkit.Common.Entities.DataModels;
+using Dalmarkit.Common.Entities.BaseEntities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Dalmarkit.EntityFrameworkCore.Services.DataServices;
 
 public abstract class ReadWriteDataServiceBase<TDbContext, TEntity>(TDbContext dbContext)
-    : DataServiceBase<TDbContext, TEntity>(dbContext), IReadWriteDataServiceBase<TEntity>
+    : ReadOnlyDataServiceBase<TDbContext, TEntity>(dbContext), IReadWriteDataServiceBase<TEntity>
     where TDbContext : DbContext
-    where TEntity : class, IDataModelReadWrite
+    where TEntity : ReadWriteEntityBase
 {
     public override async ValueTask<EntityEntry<TEntity>> CreateAsync(TEntity entity,
         AuditDetail auditDetail,
