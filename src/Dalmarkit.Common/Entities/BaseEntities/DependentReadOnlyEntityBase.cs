@@ -4,8 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Dalmarkit.Common.Entities.BaseEntities;
 
-public abstract class DependentEntityBase<TMultipleEntity> : IDataModelPrincipalId, IDataModelSelfId
-    where TMultipleEntity : IDataModelMultiple, IDataModelBase
+public abstract class DependentReadOnlyEntityBase : MultipleReadOnlyEntityBase, IDataModelPrincipalId, IDataModelSelfId
 {
     [NotMapped, JsonIgnore(Condition = JsonIgnoreCondition.Always)]
     public virtual Guid PrincipalId { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
