@@ -12,7 +12,7 @@ namespace Dalmarkit.EntityFrameworkCore.Services.ApplicationServices;
 
 public abstract class ApplicationCommandServiceBase(IMapper mapper) : ApplicationServiceBase(mapper)
 {
-    protected virtual async Task<Result<IEnumerable<Guid>, ErrorDetail>> CreateEntityDependentsAsync<TParentDataService, TDependentDataService, TCreateDependentsInputDto, TInputDto, TParentEntity, TDependentEntity, TMultipleEntity>(
+    protected virtual async Task<Result<IEnumerable<Guid>, ErrorDetail>> CreateEntityDependentsAsync<TParentDataService, TDependentDataService, TCreateDependentsInputDto, TInputDto, TParentEntity, TDependentEntity>(
         TParentDataService parentDataService,
         TDependentDataService dependentDataService,
         TCreateDependentsInputDto inputDto,
@@ -23,8 +23,7 @@ public abstract class ApplicationCommandServiceBase(IMapper mapper) : Applicatio
         where TCreateDependentsInputDto : CreateDependentsInputDto<TInputDto>
         where TInputDto : new()
         where TParentEntity : ReadWriteEntityBase
-        where TDependentEntity : DependentEntityBase<TMultipleEntity>, IDataModelBase
-        where TMultipleEntity : IDataModelMultiple, IDataModelBase
+        where TDependentEntity : ReadOnlyEntityBase, IDataModelMultiple, IDataModelPrincipalId, IDataModelSelfId
     {
         _ = Guard.NotNullOrWhiteSpace(inputDto.CreateRequestId, nameof(inputDto.CreateRequestId));
 
@@ -50,7 +49,7 @@ public abstract class ApplicationCommandServiceBase(IMapper mapper) : Applicatio
         return Ok(addedDependents.Select(x => x.SelfId));
     }
 
-    protected virtual async Task<Result<IEnumerable<Guid>, ErrorDetail>> DeleteEntityDependentsAsync<TParentDataService, TDependentDataService, TDeleteDependentsInputDto, TInputDto, TParentEntity, TDependentEntity, TMultipleEntity>(
+    protected virtual async Task<Result<IEnumerable<Guid>, ErrorDetail>> DeleteEntityDependentsAsync<TParentDataService, TDependentDataService, TDeleteDependentsInputDto, TInputDto, TParentEntity, TDependentEntity>(
         TParentDataService parentDataService,
         TDependentDataService dependentDataService,
         TDeleteDependentsInputDto inputDto,
@@ -61,8 +60,7 @@ public abstract class ApplicationCommandServiceBase(IMapper mapper) : Applicatio
         where TDeleteDependentsInputDto : DeleteDependentsInputDto<TInputDto>
         where TInputDto : IDependentInputDto, new()
         where TParentEntity : ReadWriteEntityBase
-        where TDependentEntity : DependentEntityBase<TMultipleEntity>, IDataModelReadWrite
-        where TMultipleEntity : IDataModelMultiple, IDataModelBase
+        where TDependentEntity : ReadWriteEntityBase, IDataModelMultiple, IDataModelPrincipalId, IDataModelSelfId
     {
         TParentEntity? parent = await parentDataService.FindEntityIdAsync(inputDto.ParentId, false, cancellationToken);
         if (parent == null)
@@ -89,7 +87,7 @@ public abstract class ApplicationCommandServiceBase(IMapper mapper) : Applicatio
         return Ok(modifiedDependentIds.AsEnumerable());
     }
 
-    protected virtual async Task<Result<IEnumerable<Guid>, ErrorDetail>> UpdateEntityDependentsAsync<TParentDataService, TDependentDataService, TUpdateDependentsInputDto, TInputDto, TParentEntity, TDependentEntity, TMultipleEntity>(
+    protected virtual async Task<Result<IEnumerable<Guid>, ErrorDetail>> UpdateEntityDependentsAsync<TParentDataService, TDependentDataService, TUpdateDependentsInputDto, TInputDto, TParentEntity, TDependentEntity>(
         TParentDataService parentDataService,
         TDependentDataService dependentDataService,
         TUpdateDependentsInputDto inputDto,
@@ -100,8 +98,7 @@ public abstract class ApplicationCommandServiceBase(IMapper mapper) : Applicatio
         where TUpdateDependentsInputDto : UpdateDependentsInputDto<TInputDto>
         where TInputDto : IDependentInputDto, new()
         where TParentEntity : ReadWriteEntityBase
-        where TDependentEntity : DependentEntityBase<TMultipleEntity>, IDataModelReadWrite
-        where TMultipleEntity : IDataModelMultiple, IDataModelBase
+        where TDependentEntity : ReadWriteEntityBase, IDataModelMultiple, IDataModelPrincipalId, IDataModelSelfId
     {
         TParentEntity? parent = await parentDataService.FindEntityIdAsync(inputDto.ParentId, false, cancellationToken);
         if (parent == null)
