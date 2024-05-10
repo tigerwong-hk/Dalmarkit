@@ -1,5 +1,5 @@
 using Dalmarkit.Common.AuditTrail;
-using Dalmarkit.Common.Entities.DataModels;
+using Dalmarkit.Common.Entities.BaseEntities;
 using Dalmarkit.Common.Validation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -8,7 +8,7 @@ namespace Dalmarkit.EntityFrameworkCore.Services.DataServices;
 
 public abstract class DataServiceBase<TDbContext, TEntity>(TDbContext dbContext) : IDataServiceBase<TEntity>
     where TDbContext : DbContext
-    where TEntity : class, IDataModelBase
+    where TEntity : EntityBase
 {
     protected TDbContext DbContext { get; } = Guard.NotNull(dbContext, nameof(dbContext));
 

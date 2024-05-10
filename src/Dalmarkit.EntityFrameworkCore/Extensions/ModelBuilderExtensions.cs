@@ -48,6 +48,18 @@ public static class ModelBuilderExtensions
         return modelBuilder;
     }
 
+    public static ModelBuilder BuildMultipleReadOnlyEntity<T>(this ModelBuilder modelBuilder)
+        where T : MultipleReadOnlyEntityBase
+    {
+        _ = modelBuilder.BuildBasicEntity<T>();
+
+        _ = modelBuilder.Entity<T>()
+            .HasIndex(e => new { e.CreateRequestId, e.ClientId, e.EntityHash })
+            .IsUnique();
+
+        return modelBuilder;
+    }
+
     public static ModelBuilder BuildMultipleReadWriteEntity<T>(this ModelBuilder modelBuilder)
         where T : MultipleReadWriteEntityBase
     {

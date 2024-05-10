@@ -1,11 +1,11 @@
 using Dalmarkit.Common.AuditTrail;
-using Dalmarkit.Common.Entities.DataModels;
+using Dalmarkit.Common.Entities.BaseEntities;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Dalmarkit.EntityFrameworkCore.Services.DataServices;
 
-public interface IReadWriteDataServiceBase<TEntity> : IDataServiceBase<TEntity>
-    where TEntity : class, IDataModelReadWrite
+public interface IReadWriteDataServiceBase<TEntity> : IReadOnlyDataServiceBase<TEntity>
+    where TEntity : ReadWriteEntityBase
 {
     EntityEntry<TEntity> Update(TEntity entity, AuditDetail auditDetail);
 }

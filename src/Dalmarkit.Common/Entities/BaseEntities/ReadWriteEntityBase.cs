@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Dalmarkit.Common.Entities.BaseEntities;
 
-public abstract class ReadWriteEntityBase : EntityBase, IDataModelReadWrite
+public abstract class ReadWriteEntityBase : ReadOnlyEntityBase, IDataModelReadWrite
 {
     public bool IsDeleted { get; set; }
 

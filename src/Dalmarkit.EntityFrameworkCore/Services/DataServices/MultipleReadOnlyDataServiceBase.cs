@@ -7,10 +7,10 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Dalmarkit.EntityFrameworkCore.Services.DataServices;
 
-public abstract class MultipleReadWriteDataServiceBase<TDbContext, TEntity>(TDbContext dbContext)
-    : ReadWriteDataServiceBase<TDbContext, TEntity>(dbContext), IMultipleReadWriteDataServiceBase<TEntity>
+public abstract class MultipleReadOnlyDataServiceBase<TDbContext, TEntity>(TDbContext dbContext)
+    : ReadOnlyDataServiceBase<TDbContext, TEntity>(dbContext), IMultipleReadOnlyDataServiceBase<TEntity>
     where TDbContext : DbContext
-    where TEntity : ReadWriteEntityBase, IDataModelMultiple
+    where TEntity : ReadOnlyEntityBase, IDataModelMultiple
 {
     public override async ValueTask<EntityEntry<TEntity>> CreateAsync(TEntity entity,
         AuditDetail auditDetail,

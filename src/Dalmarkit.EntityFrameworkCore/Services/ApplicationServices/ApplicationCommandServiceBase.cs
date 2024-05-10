@@ -3,6 +3,7 @@ using Dalmarkit.Common.Api.Responses;
 using Dalmarkit.Common.AuditTrail;
 using Dalmarkit.Common.Dtos.InputDtos;
 using Dalmarkit.Common.Entities.BaseEntities;
+using Dalmarkit.Common.Entities.DataModels;
 using Dalmarkit.Common.Errors;
 using Dalmarkit.Common.Validation;
 using Dalmarkit.EntityFrameworkCore.Services.DataServices;
@@ -18,11 +19,11 @@ public abstract class ApplicationCommandServiceBase(IMapper mapper) : Applicatio
         AuditDetail auditDetail,
         CancellationToken cancellationToken = default)
         where TParentDataService : IDataServiceBase<TParentEntity>
-        where TDependentDataService : IReadWriteDataServiceBase<TDependentEntity>
+        where TDependentDataService : IDataServiceBase<TDependentEntity>
         where TCreateDependentsInputDto : CreateDependentsInputDto<TInputDto>
         where TInputDto : new()
         where TParentEntity : ReadWriteEntityBase
-        where TDependentEntity : DependentEntityBase
+        where TDependentEntity : ReadOnlyEntityBase, IDataModelMultiple, IDataModelPrincipalId, IDataModelSelfId
     {
         _ = Guard.NotNullOrWhiteSpace(inputDto.CreateRequestId, nameof(inputDto.CreateRequestId));
 
@@ -59,7 +60,7 @@ public abstract class ApplicationCommandServiceBase(IMapper mapper) : Applicatio
         where TDeleteDependentsInputDto : DeleteDependentsInputDto<TInputDto>
         where TInputDto : IDependentInputDto, new()
         where TParentEntity : ReadWriteEntityBase
-        where TDependentEntity : DependentEntityBase
+        where TDependentEntity : ReadWriteEntityBase, IDataModelMultiple, IDataModelPrincipalId, IDataModelSelfId
     {
         TParentEntity? parent = await parentDataService.FindEntityIdAsync(inputDto.ParentId, false, cancellationToken);
         if (parent == null)
@@ -97,7 +98,7 @@ public abstract class ApplicationCommandServiceBase(IMapper mapper) : Applicatio
         where TUpdateDependentsInputDto : UpdateDependentsInputDto<TInputDto>
         where TInputDto : IDependentInputDto, new()
         where TParentEntity : ReadWriteEntityBase
-        where TDependentEntity : DependentEntityBase
+        where TDependentEntity : ReadWriteEntityBase, IDataModelMultiple, IDataModelPrincipalId, IDataModelSelfId
     {
         TParentEntity? parent = await parentDataService.FindEntityIdAsync(inputDto.ParentId, false, cancellationToken);
         if (parent == null)

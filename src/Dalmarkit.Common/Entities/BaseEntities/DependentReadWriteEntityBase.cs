@@ -4,8 +4,11 @@ using System.Text.Json.Serialization;
 
 namespace Dalmarkit.Common.Entities.BaseEntities;
 
-public abstract class PrincipalEntityBase : ReadWriteEntityBase, IDataModelSelfId
+public abstract class DependentReadWriteEntityBase : MultipleReadWriteEntityBase, IDataModelPrincipalId, IDataModelSelfId
 {
+    [NotMapped, JsonIgnore(Condition = JsonIgnoreCondition.Always)]
+    public virtual Guid PrincipalId { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+
     [NotMapped, JsonIgnore(Condition = JsonIgnoreCondition.Always)]
     public virtual Guid SelfId { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 }
