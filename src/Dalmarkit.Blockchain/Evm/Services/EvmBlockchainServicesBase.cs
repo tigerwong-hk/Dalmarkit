@@ -127,7 +127,7 @@ public abstract partial class EvmBlockchainServiceBase
         return JsonConvert.SerializeObject(eventLogs);
     }
 
-    protected async Task<string?> GetEventBySignatureAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, string eventSha3Signature, string jsonAbi, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1)
+    protected async Task<string?> GetEventBySha3SignatureAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, string eventSha3Signature, string jsonAbi, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1)
     {
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
@@ -223,14 +223,26 @@ public abstract partial class EvmBlockchainServiceBase
         return transactionReceipt;
     }
 
-    protected Web3? GetWeb3Client(BlockchainNetwork blockchainNetwork)
+    protected string? GetPropertyForBlockchainNetwork(IDictionary<string, string> blockchainNetworkMap, BlockchainNetwork blockchainNetwork)
     {
-        if (!_blockchainOptions.RpcUrls!.TryGetValue(blockchainNetwork.ToString(), out string? rpcUrl))
+        if (!blockchainNetworkMap.TryGetValue(blockchainNetwork.ToString(), out string? blockchainNetworkProperty))
         {
-            _logger.RpcUrlNotFoundForError(blockchainNetwork);
+            _logger.BlockchainPropertyNotFoundForError(blockchainNetwork);
             return default;
         }
 
+        if (string.IsNullOrWhiteSpace(blockchainNetworkProperty))
+        {
+            _logger.BlockchainPropertyNullOrWhitespaceForError(blockchainNetwork);
+            return default;
+        }
+
+        return blockchainNetworkProperty;
+    }
+
+    protected Web3? GetWeb3Client(BlockchainNetwork blockchainNetwork)
+    {
+        string? rpcUrl = GetPropertyForBlockchainNetwork(_blockchainOptions.RpcUrls!, blockchainNetwork);
         if (string.IsNullOrWhiteSpace(rpcUrl))
         {
             _logger.RpcUrlNullOrWhitespaceForError(blockchainNetwork);
@@ -246,6 +258,20 @@ public abstract partial class EvmBlockchainServiceBase
 
 public static partial class EvmBlockchainServiceBaseLogs
 {
+    [LoggerMessage(
+        EventId = 0,
+        Level = LogLevel.Error,
+        Message = "Blockchain property not found for blockchain network `{BlockchainNetwork}`")]
+    public static partial void BlockchainPropertyNotFoundForError(
+        this ILogger logger, BlockchainNetwork blockchainNetwork);
+
+    [LoggerMessage(
+        EventId = 12,
+        Level = LogLevel.Error,
+        Message = "Blockchain property null or whitespace for blockchain network `{BlockchainNetwork}`")]
+    public static partial void BlockchainPropertyNullOrWhitespaceForError(
+        this ILogger logger, BlockchainNetwork blockchainNetwork);
+
     [LoggerMessage(
         EventId = 6,
         Level = LogLevel.Information,
@@ -294,13 +320,6 @@ public static partial class EvmBlockchainServiceBaseLogs
         Message = "Null transaction receipt on blockchain network `{BlockchainNetwork}` for transaction hash: {TransactionHash}")]
     public static partial void NullTransactionReceiptForError(
         this ILogger logger, BlockchainNetwork blockchainNetwork, string transactionHash);
-
-    [LoggerMessage(
-        EventId = 0,
-        Level = LogLevel.Error,
-        Message = "RPC URL not found for blockchain network `{BlockchainNetwork}`")]
-    public static partial void RpcUrlNotFoundForError(
-        this ILogger logger, BlockchainNetwork blockchainNetwork);
 
     [LoggerMessage(
         EventId = 1,
