@@ -7,6 +7,8 @@ using Nethereum.Contracts;
 using Nethereum.Contracts.ContractHandlers;
 using Nethereum.RPC.Eth.DTOs;
 using Nethereum.Web3;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
 
@@ -33,50 +35,153 @@ public abstract partial class EvmBlockchainServiceBase
         where TFunctionHandler : FunctionMessage, new()
         where TFunctionOutputDto : IFunctionOutputDTO, new()
     {
+        _ = Guard.NotNull(contractFunction, nameof(contractFunction));
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
 
-        if (!_blockchainOptions.RpcUrls!.TryGetValue(blockchainNetwork.ToString(), out string? rpcUrl))
+        Web3? web3Client = GetWeb3Client(blockchainNetwork);
+        if (web3Client == null)
         {
-            _logger.RpcUrlNotFoundForError(blockchainNetwork);
             return default;
         }
-
-        if (string.IsNullOrWhiteSpace(rpcUrl))
-        {
-            _logger.RpcUrlNullOrWhitespaceForError(blockchainNetwork);
-            return default;
-        }
-
-        Web3 web3Client = new(rpcUrl);
 
         IContractQueryHandler<TFunctionHandler> functionHandler = web3Client.Eth.GetContractQueryHandler<TFunctionHandler>();
         return await functionHandler.QueryAsync<TFunctionOutputDto>(contractAddress, contractFunction);
     }
 
-    protected async Task<T?> GetEventAsync<T>(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1) where T : new()
+    protected async Task<List<T>?> GetEventAsync<T>(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1) where T : new()
     {
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
 
-        if (!_blockchainOptions.RpcUrls!.TryGetValue(blockchainNetwork.ToString(), out string? rpcUrl))
+        Web3? web3Client = GetWeb3Client(blockchainNetwork);
+        if (web3Client == null)
         {
-            _logger.RpcUrlNotFoundForError(blockchainNetwork);
             return default;
         }
 
-        if (string.IsNullOrWhiteSpace(rpcUrl))
+        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        if (transactionReceipt == null)
         {
-            _logger.RpcUrlNullOrWhitespaceForError(blockchainNetwork);
             return default;
         }
+
+        List<EventLog<T>> eventLogs = transactionReceipt.DecodeAllEvents<T>();
+        if (disableExactEventLogCountCheck)
+        {
+            if (eventLogs.Count < 1)
+            {
+                _logger.NoEventLogsFoundForError(blockchainNetwork, transactionHash, eventLogs.Count);
+                return default;
+            }
+        }
+        else if (eventLogs.Count != expectedEventLogsCount)
+        {
+            _logger.UnexpectedEventLogsCountForError(blockchainNetwork, transactionHash, eventLogs.Count, expectedEventLogsCount);
+            return default;
+        }
+
+        return eventLogs.ConvertAll(e => e.Event);
+    }
+
+    protected async Task<string?> GetEventByNameAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, string eventName, string jsonAbi, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1)
+    {
+        _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
+        _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
+        _ = Guard.NotNullOrWhiteSpace(eventName, nameof(eventName));
+        _ = Guard.NotNullOrWhiteSpace(jsonAbi, nameof(jsonAbi));
+
+        Web3? web3Client = GetWeb3Client(blockchainNetwork);
+        if (web3Client == null)
+        {
+            return default;
+        }
+
+        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        if (transactionReceipt == null)
+        {
+            return default;
+        }
+
+        Contract contract = web3Client.Eth.GetContract(jsonAbi, contractAddress);
+        List<JObject>? eventLogs = transactionReceipt.DecodeAllEventsToJObjectsWithName(eventName, contract);
+        if (eventLogs == null)
+        {
+            _logger.NullEventLogsError(blockchainNetwork, transactionHash);
+            return default;
+        }
+
+        if (disableExactEventLogCountCheck)
+        {
+            if (eventLogs.Count < 1)
+            {
+                _logger.NoEventLogsFoundForError(blockchainNetwork, transactionHash, eventLogs.Count);
+                return default;
+            }
+        }
+        else if (eventLogs.Count != expectedEventLogsCount)
+        {
+            _logger.UnexpectedEventLogsCountForError(blockchainNetwork, transactionHash, eventLogs.Count, expectedEventLogsCount);
+            return default;
+        }
+
+        return JsonConvert.SerializeObject(eventLogs);
+    }
+
+    protected async Task<string?> GetEventBySha3SignatureAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, string eventSha3Signature, string jsonAbi, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1)
+    {
+        _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
+        _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
+        _ = Guard.NotNullOrWhiteSpace(eventSha3Signature, nameof(eventSha3Signature));
+        _ = Guard.NotNullOrWhiteSpace(jsonAbi, nameof(jsonAbi));
+
+        Web3? web3Client = GetWeb3Client(blockchainNetwork);
+        if (web3Client == null)
+        {
+            return default;
+        }
+
+        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        if (transactionReceipt == null)
+        {
+            return default;
+        }
+
+        Contract contract = web3Client.Eth.GetContract(jsonAbi, contractAddress);
+        List<JObject>? eventLogs = transactionReceipt.DecodeAllEventsToJObjectsWithSha3Signature(eventSha3Signature, contract);
+        if (eventLogs == null)
+        {
+            _logger.NullEventLogsError(blockchainNetwork, transactionHash);
+            return default;
+        }
+
+        if (disableExactEventLogCountCheck)
+        {
+            if (eventLogs.Count < 1)
+            {
+                _logger.NoEventLogsFoundForError(blockchainNetwork, transactionHash, eventLogs.Count);
+                return default;
+            }
+        }
+        else if (eventLogs.Count != expectedEventLogsCount)
+        {
+            _logger.UnexpectedEventLogsCountForError(blockchainNetwork, transactionHash, eventLogs.Count, expectedEventLogsCount);
+            return default;
+        }
+
+        return JsonConvert.SerializeObject(eventLogs);
+    }
+
+    protected async Task<TransactionReceipt?> GetEventsTransactionReceiptAsync(Web3 web3Client, string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork)
+    {
+        _ = Guard.NotNull(web3Client, nameof(web3Client));
+        _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
+        _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
 
         if (!TransactionHashRegex().IsMatch(transactionHash))
         {
             _logger.InvalidTransactionHashForError(blockchainNetwork, transactionHash);
             return default;
         }
-
-        Web3 web3Client = new(rpcUrl);
 
         TransactionReceipt transactionReceipt = await web3Client.Eth.Transactions.GetTransactionReceipt.SendRequestAsync(transactionHash);
         if (transactionReceipt == null)
@@ -115,22 +220,36 @@ public abstract partial class EvmBlockchainServiceBase
             return default;
         }
 
-        List<EventLog<T>> eventLogs = transactionReceipt.DecodeAllEvents<T>();
-        if (disableExactEventLogCountCheck)
+        return transactionReceipt;
+    }
+
+    protected string? GetPropertyForBlockchainNetwork(IDictionary<string, string> blockchainNetworkMap, BlockchainNetwork blockchainNetwork)
+    {
+        if (!blockchainNetworkMap.TryGetValue(blockchainNetwork.ToString(), out string? blockchainNetworkProperty))
         {
-            if (eventLogs.Count < 1)
-            {
-                _logger.NoEventLogsFoundForError(blockchainNetwork, transactionHash, eventLogs.Count);
-                return default;
-            }
-        }
-        else if (eventLogs.Count != expectedEventLogsCount)
-        {
-            _logger.UnexpectedEventLogsCountForError(blockchainNetwork, transactionHash, eventLogs.Count, expectedEventLogsCount);
+            _logger.BlockchainPropertyNotFoundForError(blockchainNetwork);
             return default;
         }
 
-        return eventLogs[0].Event;
+        if (string.IsNullOrWhiteSpace(blockchainNetworkProperty))
+        {
+            _logger.BlockchainPropertyNullOrWhitespaceForError(blockchainNetwork);
+            return default;
+        }
+
+        return blockchainNetworkProperty;
+    }
+
+    protected Web3? GetWeb3Client(BlockchainNetwork blockchainNetwork)
+    {
+        string? rpcUrl = GetPropertyForBlockchainNetwork(_blockchainOptions.RpcUrls!, blockchainNetwork);
+        if (string.IsNullOrWhiteSpace(rpcUrl))
+        {
+            _logger.RpcUrlNullOrWhitespaceForError(blockchainNetwork);
+            return default;
+        }
+
+        return new Web3(rpcUrl);
     }
 
     [GeneratedRegex(RegexTransactionHash)]
@@ -139,6 +258,20 @@ public abstract partial class EvmBlockchainServiceBase
 
 public static partial class EvmBlockchainServiceBaseLogs
 {
+    [LoggerMessage(
+        EventId = 0,
+        Level = LogLevel.Error,
+        Message = "Blockchain property not found for blockchain network `{BlockchainNetwork}`")]
+    public static partial void BlockchainPropertyNotFoundForError(
+        this ILogger logger, BlockchainNetwork blockchainNetwork);
+
+    [LoggerMessage(
+        EventId = 12,
+        Level = LogLevel.Error,
+        Message = "Blockchain property null or whitespace for blockchain network `{BlockchainNetwork}`")]
+    public static partial void BlockchainPropertyNullOrWhitespaceForError(
+        this ILogger logger, BlockchainNetwork blockchainNetwork);
+
     [LoggerMessage(
         EventId = 6,
         Level = LogLevel.Information,
@@ -163,6 +296,13 @@ public static partial class EvmBlockchainServiceBaseLogs
     [LoggerMessage(
         EventId = 9,
         Level = LogLevel.Information,
+        Message = "Null event logs on blockchain network `{BlockchainNetwork}` for transaction hash: {TransactionHash}")]
+    public static partial void NullEventLogsError(
+        this ILogger logger, BlockchainNetwork blockchainNetwork, string transactionHash);
+
+    [LoggerMessage(
+        EventId = 10,
+        Level = LogLevel.Information,
         Message = "No event logs found on blockchain network `{BlockchainNetwork}` for transaction hash `{TransactionHash}`: {EventLogsCount}")]
     public static partial void NoEventLogsFoundForError(
         this ILogger logger, BlockchainNetwork blockchainNetwork, string transactionHash, int eventLogsCount);
@@ -180,13 +320,6 @@ public static partial class EvmBlockchainServiceBaseLogs
         Message = "Null transaction receipt on blockchain network `{BlockchainNetwork}` for transaction hash: {TransactionHash}")]
     public static partial void NullTransactionReceiptForError(
         this ILogger logger, BlockchainNetwork blockchainNetwork, string transactionHash);
-
-    [LoggerMessage(
-        EventId = 0,
-        Level = LogLevel.Error,
-        Message = "RPC URL not found for blockchain network `{BlockchainNetwork}`")]
-    public static partial void RpcUrlNotFoundForError(
-        this ILogger logger, BlockchainNetwork blockchainNetwork);
 
     [LoggerMessage(
         EventId = 1,
@@ -210,7 +343,7 @@ public static partial class EvmBlockchainServiceBaseLogs
         this ILogger logger, BlockchainNetwork blockchainNetwork, string transactionHash, string onchainContractAddress, string expectedContractAddress);
 
     [LoggerMessage(
-        EventId = 10,
+        EventId = 11,
         Level = LogLevel.Information,
         Message = "Unexpected event logs count on blockchain network `{BlockchainNetwork}` for transaction hash `{TransactionHash}`: `{OnchainEventLogsCount}` instead of `{ExpectedEventLogsCount}`")]
     public static partial void UnexpectedEventLogsCountForError(
