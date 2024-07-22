@@ -154,6 +154,7 @@ public abstract partial class EvmBlockchainServiceBase
         IEnumerable<string> signatures = contract.ExtractSignaturesWithName(eventName);
         if (signatures == null)
         {
+            _logger.NoEventSignaturesFoundForError(contractAddress, eventName);
             return default;
         }
 
@@ -364,6 +365,13 @@ public static partial class EvmBlockchainServiceBaseLogs
         Message = "No event logs found on blockchain network `{BlockchainNetwork}` for transaction hash `{TransactionHash}`: {EventLogsCount}")]
     public static partial void NoEventLogsFoundForError(
         this ILogger logger, BlockchainNetwork blockchainNetwork, string transactionHash, int eventLogsCount);
+
+    [LoggerMessage(
+        EventId = 13,
+        Level = LogLevel.Information,
+        Message = "No event signatures found for contract address `{ContractAddress}` with event name: {EventName}")]
+    public static partial void NoEventSignaturesFoundForError(
+        this ILogger logger, string contractAddress, string eventName);
 
     [LoggerMessage(
         EventId = 5,
