@@ -21,6 +21,11 @@ public static class EvmBlockchainEventExtensions
         return eventABIs.SingleOrDefault();
     }
 
+    public static IEnumerable<string> ExtractSignaturesWithName(this Contract contract, string eventName)
+    {
+        return contract.ContractBuilder.ContractABI.Events.Where(e => e.Name == eventName).Select(e => e.Sha3Signature);
+    }
+
     public static List<JObject>? DecodeAllEventsToJObjectsWithName(this JArray logs, string eventName, Contract contract)
     {
         EventABI? eventABI = contract.ExtractEventABIWithName(eventName);
