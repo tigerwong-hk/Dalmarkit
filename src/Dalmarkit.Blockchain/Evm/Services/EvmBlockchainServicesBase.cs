@@ -49,7 +49,7 @@ public abstract partial class EvmBlockchainServiceBase
         return await functionHandler.QueryAsync<TFunctionOutputDto>(contractAddress, contractFunction);
     }
 
-    protected async Task<List<T>?> GetEventAsync<T>(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1) where T : new()
+    protected async Task<List<T>?> GetEventAsync<T>(string contractAddress, string[] contractCallerAddresses, string transactionHash, BlockchainNetwork blockchainNetwork, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1) where T : new()
     {
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
@@ -60,7 +60,7 @@ public abstract partial class EvmBlockchainServiceBase
             return default;
         }
 
-        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, contractCallerAddresses, transactionHash, blockchainNetwork);
         if (transactionReceipt == null)
         {
             return default;
@@ -84,7 +84,7 @@ public abstract partial class EvmBlockchainServiceBase
         return eventLogs.ConvertAll(e => e.Event);
     }
 
-    protected async Task<string?> GetEventByNameAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, string eventName, string jsonAbi, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1)
+    protected async Task<string?> GetEventByNameAsync(string contractAddress, string[] contractCallerAddresses, string transactionHash, BlockchainNetwork blockchainNetwork, string eventName, string jsonAbi, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1)
     {
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
@@ -97,7 +97,7 @@ public abstract partial class EvmBlockchainServiceBase
             return default;
         }
 
-        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, contractCallerAddresses, transactionHash, blockchainNetwork);
         if (transactionReceipt == null)
         {
             return default;
@@ -128,7 +128,7 @@ public abstract partial class EvmBlockchainServiceBase
         return JsonConvert.SerializeObject(eventLogs);
     }
 
-    protected async Task<List<EvmEventDto>?> GetEventsByNameAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, string eventName, string jsonAbi)
+    protected async Task<List<EvmEventDto>?> GetEventsByNameAsync(string contractAddress, string[] contractCallerAddresses, string transactionHash, BlockchainNetwork blockchainNetwork, string eventName, string jsonAbi)
     {
         List<EvmEventDto> evmEventDtos = [];
 
@@ -143,7 +143,7 @@ public abstract partial class EvmBlockchainServiceBase
             return default;
         }
 
-        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, contractCallerAddresses, transactionHash, blockchainNetwork);
         if (transactionReceipt == null)
         {
             return default;
@@ -186,7 +186,7 @@ public abstract partial class EvmBlockchainServiceBase
         return evmEventDtos;
     }
 
-    protected async Task<string?> GetEventBySha3SignatureAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, string eventSha3Signature, string jsonAbi, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1)
+    protected async Task<string?> GetEventBySha3SignatureAsync(string contractAddress, string[] contractCallerAddresses, string transactionHash, BlockchainNetwork blockchainNetwork, string eventSha3Signature, string jsonAbi, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1)
     {
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
@@ -199,7 +199,7 @@ public abstract partial class EvmBlockchainServiceBase
             return default;
         }
 
-        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, contractCallerAddresses, transactionHash, blockchainNetwork);
         if (transactionReceipt == null)
         {
             return default;
@@ -230,7 +230,7 @@ public abstract partial class EvmBlockchainServiceBase
         return JsonConvert.SerializeObject(eventLogs);
     }
 
-    protected async Task<TransactionReceipt?> GetEventsTransactionReceiptAsync(Web3 web3Client, string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork)
+    protected async Task<TransactionReceipt?> GetEventsTransactionReceiptAsync(Web3 web3Client, string contractAddress, string[] contractCallerAddresses, string transactionHash, BlockchainNetwork blockchainNetwork)
     {
         _ = Guard.NotNull(web3Client, nameof(web3Client));
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
@@ -267,9 +267,10 @@ public abstract partial class EvmBlockchainServiceBase
             return default;
         }
 
-        if (!string.Equals(transactionReceipt.To, contractAddress, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(transactionReceipt.To, contractAddress, StringComparison.OrdinalIgnoreCase)
+            && !Array.Exists(contractCallerAddresses, callerAddress => string.Equals(transactionReceipt.To, callerAddress, StringComparison.OrdinalIgnoreCase)))
         {
-            _logger.UnexpectedContractAddressForError(blockchainNetwork, transactionHash, transactionReceipt.To, contractAddress);
+            _logger.UnexpectedContractAddressForError(blockchainNetwork, transactionHash, transactionReceipt.To, contractAddress, string.Join(", ", contractCallerAddresses));
             return default;
         }
 
@@ -404,9 +405,9 @@ public static partial class EvmBlockchainServiceBaseLogs
     [LoggerMessage(
         EventId = 7,
         Level = LogLevel.Information,
-        Message = "Unexpected contract address on blockchain network `{BlockchainNetwork}` for transaction hash `{TransactionHash}`: `{OnchainContractAddress}` instead of `{ExpectedContractAddress}`")]
+        Message = "Unexpected contract address on blockchain network `{BlockchainNetwork}` for transaction hash `{TransactionHash}`: `{OnchainContractAddress}` instead of `{ExpectedContractAddress}` or `{contractCallerAddresses}`")]
     public static partial void UnexpectedContractAddressForError(
-        this ILogger logger, BlockchainNetwork blockchainNetwork, string transactionHash, string onchainContractAddress, string expectedContractAddress);
+        this ILogger logger, BlockchainNetwork blockchainNetwork, string transactionHash, string onchainContractAddress, string expectedContractAddress, string contractCallerAddresses);
 
     [LoggerMessage(
         EventId = 11,
