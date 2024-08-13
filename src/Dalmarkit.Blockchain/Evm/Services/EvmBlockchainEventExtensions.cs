@@ -63,9 +63,7 @@ public static class EvmBlockchainEventExtensions
 
     public static List<JObject> DecodeAllEventsToJObjects(this EventABI eventABI, FilterLog[] logs)
     {
-#pragma warning disable IDE0028 // Simplify collection initialization
-        List<JObject> result = new();
-#pragma warning restore IDE0028 // Simplify collection initialization
+        List<JObject> result = [];
 
         if (logs == null)
         {
