@@ -1,6 +1,6 @@
 <Project>
  <PropertyGroup>
-    <VersionPrefix>0.3.4</VersionPrefix>
+    <VersionPrefix>0.3.5</VersionPrefix>
     <Authors>Tiger Wong</Authors>
     <Description>Dalmarkit is an opinionated .NET utility library that simplifies the building of AWS Cognito secured JSON REST APIs with audit trails using ASP.NET Core and Entity Framework Core with PostgreSQL.</Description>
     <PackageProjectUrl>https://github.com/tigerwong-hk/Dalmarkit</PackageProjectUrl>
