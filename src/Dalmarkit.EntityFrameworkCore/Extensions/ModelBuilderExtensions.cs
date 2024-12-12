@@ -26,6 +26,12 @@ public static class ModelBuilderExtensions
     {
         _ = modelBuilder.BuildLogEntity<AuditLog>();
 
+        _ = modelBuilder.Entity<AuditLog>().Property(t => t.CreatedOn).HasDefaultValueSql(DefaultDateTimeValueSql);
+        _ = modelBuilder.Entity<AuditLog>().HasIndex(t => t.CreatedOn);
+
+        _ = modelBuilder.Entity<AuditLog>().Property(t => t.ModifiedOn).HasDefaultValueSql(DefaultDateTimeValueSql);
+        _ = modelBuilder.Entity<AuditLog>().HasIndex(t => t.ModifiedOn);
+
         _ = modelBuilder.Entity<AuditLog>().HasIndex(l => l.ChangedValues).HasMethod("gin");
         _ = modelBuilder.Entity<AuditLog>().HasIndex(l => l.PrimaryKey);
         _ = modelBuilder.Entity<AuditLog>().HasIndex(l => new { l.Table, l.PrimaryKey });
