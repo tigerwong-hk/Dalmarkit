@@ -7,7 +7,6 @@ using Dalmarkit.Common.AuditTrail;
 using Dalmarkit.Common.Entities.BaseEntities;
 using Dalmarkit.Common.Entities.Components;
 using Dalmarkit.Common.Errors;
-using System.Collections;
 
 namespace Dalmarkit.AspNetCore.AuditTrail;
 
@@ -139,9 +138,7 @@ public class AuditTrailAuditDataProvider(string connectionString) : AuditDataPro
             return null;
         }
 
-        List<EventEntryChange> changedList = entry.Changes.Where(
-            c => Comparer.DefaultInvariant.Compare(c.NewValue, c.OriginalValue) != 0)
-            .ToList();
+        List<EventEntryChange> changedList = [.. entry.Changes];
         entry.Changes = changedList;
 
         Dictionary<string, ChangedValue> changes = [];
