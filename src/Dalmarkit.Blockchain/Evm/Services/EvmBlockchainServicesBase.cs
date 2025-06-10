@@ -33,7 +33,6 @@ public abstract partial class EvmBlockchainServiceBase
         _blockchainOptions.Validate();
 
         _walletOptions = walletOptions?.Value;
-        _walletOptions?.Validate();
 
         _logger = Guard.NotNull(logger, nameof(logger));
 
