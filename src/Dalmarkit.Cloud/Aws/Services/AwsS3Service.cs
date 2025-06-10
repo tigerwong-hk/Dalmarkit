@@ -87,7 +87,7 @@ public class AwsS3Service(TransferUtility transferUtility,
     private static string EscapePathSegments(string path)
     {
         string[] segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        List<string> pathSegments = segments.Select(Uri.EscapeDataString).ToList();
+        List<string> pathSegments = [.. segments.Select(Uri.EscapeDataString)];
 
         return string.Join('/', pathSegments);
     }
