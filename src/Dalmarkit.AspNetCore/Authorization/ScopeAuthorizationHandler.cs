@@ -42,7 +42,7 @@ public class ScopeAuthorizationHandler(IConfiguration configuration) : Authoriza
             return Task.CompletedTask;
         }
 
-        List<Claim> scopeClaims = context.User.FindAll(requirement.ClaimType).ToList();
+        List<Claim> scopeClaims = [.. context.User.FindAll(requirement.ClaimType)];
         if (scopeClaims.Count == 0)
         {
             return Task.CompletedTask;
