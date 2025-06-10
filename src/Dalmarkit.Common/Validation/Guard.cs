@@ -9,7 +9,7 @@ public static class Guard
 #pragma warning disable RCS1238 // Avoid nested ?: operators
         return string.IsNullOrWhiteSpace(parameterName)
             ? throw new ArgumentException(ErrorMessages.ParameterNameMissing, nameof(parameterName))
-            : value == Guid.Empty ? throw new ArgumentException(ErrorMessages.ValueIsEmpty, parameterName) : value;
+            : (value == Guid.Empty ? throw new ArgumentException(ErrorMessages.ValueIsEmpty, parameterName) : value);
 #pragma warning restore RCS1238 // Avoid nested ?: operators
     }
 
@@ -18,7 +18,7 @@ public static class Guard
 #pragma warning disable RCS1238 // Avoid nested ?: operators
         return string.IsNullOrWhiteSpace(parameterName)
             ? throw new ArgumentException(ErrorMessages.ParameterNameMissing, nameof(parameterName))
-            : value is null ? throw new ArgumentNullException(parameterName) : value;
+            : (value is null ? throw new ArgumentNullException(parameterName) : value);
 #pragma warning restore RCS1238 // Avoid nested ?: operators
     }
 
@@ -27,7 +27,7 @@ public static class Guard
 #pragma warning disable RCS1238 // Avoid nested ?: operators
         return string.IsNullOrWhiteSpace(parameterName)
             ? throw new ArgumentException(ErrorMessages.ParameterNameMissing, nameof(parameterName))
-            : string.IsNullOrWhiteSpace(value) ? throw new ArgumentException(ErrorMessages.ValueIsNullOrWhiteSpace, parameterName) : value;
+            : (string.IsNullOrWhiteSpace(value) ? throw new ArgumentException(ErrorMessages.ValueIsNullOrWhiteSpace, parameterName) : value);
 #pragma warning restore RCS1238 // Avoid nested ?: operators
     }
 }

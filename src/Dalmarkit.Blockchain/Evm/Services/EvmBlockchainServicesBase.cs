@@ -8,6 +8,7 @@ using Nethereum.Contracts;
 using Nethereum.Contracts.ContractHandlers;
 using Nethereum.RPC.Eth.DTOs;
 using Nethereum.Web3;
+using Nethereum.Web3.Accounts;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Numerics;
@@ -18,18 +19,35 @@ namespace Dalmarkit.Blockchain.Evm.Services;
 public abstract partial class EvmBlockchainServiceBase
 {
     public const string RegexTransactionHash = "^0x[0-9A-Fa-f]{64}$";
+    private readonly IDictionary<BlockchainNetwork, Web3> _web3Clients = new Dictionary<BlockchainNetwork, Web3>();
     private readonly EvmBlockchainOptions _blockchainOptions;
+    private readonly EvmWalletOptions? _walletOptions;
     private readonly ILogger _logger;
 
-    protected EvmBlockchainServiceBase(IOptions<EvmBlockchainOptions> blockchainOptions,
+    protected EvmBlockchainServiceBase(
+        IOptions<EvmBlockchainOptions> blockchainOptions,
+        IOptions<EvmWalletOptions>? walletOptions,
         ILogger<EvmBlockchainServiceBase> logger)
     {
         _blockchainOptions = Guard.NotNull(blockchainOptions, nameof(blockchainOptions)).Value;
-        _ = Guard.NotNull(_blockchainOptions.RpcUrls, nameof(_blockchainOptions.RpcUrls));
+        _blockchainOptions.Validate();
+
+        _walletOptions = walletOptions?.Value;
+
         _logger = Guard.NotNull(logger, nameof(logger));
+
+        Account? web3Account = _walletOptions?.PrivateKey == null ? null : new Account(_walletOptions.PrivateKey);
+
+        foreach (string blockchainNetworkName in (string[])[.. _blockchainOptions.RpcUrls!.Keys])
+        {
+            BlockchainNetwork blockchainNetwork = Enum.Parse<BlockchainNetwork>(blockchainNetworkName);
+            Web3? web3Client = GetWeb3Client(blockchainNetwork, web3Account);
+            _ = Guard.NotNull(web3Client, nameof(web3Client));
+            _web3Clients[blockchainNetwork] = web3Client!;
+        }
     }
 
-    protected async Task<TFunctionOutputDto?> CallContractFunctionAsync<TFunctionHandler, TFunctionOutputDto>(
+    protected async Task<TFunctionOutputDto?> CallReadContractFunctionAsync<TFunctionHandler, TFunctionOutputDto>(
         TFunctionHandler contractFunction,
         string contractAddress,
         BlockchainNetwork blockchainNetwork)
@@ -38,15 +56,30 @@ public abstract partial class EvmBlockchainServiceBase
     {
         _ = Guard.NotNull(contractFunction, nameof(contractFunction));
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
+        _ = Guard.NotNull(_web3Clients[blockchainNetwork], nameof(_web3Clients));
 
-        Web3? web3Client = GetWeb3Client(blockchainNetwork);
-        if (web3Client == null)
-        {
-            return default;
-        }
-
-        IContractQueryHandler<TFunctionHandler> functionHandler = web3Client.Eth.GetContractQueryHandler<TFunctionHandler>();
+        IContractQueryHandler<TFunctionHandler> functionHandler =
+            _web3Clients[blockchainNetwork].Eth.GetContractQueryHandler<TFunctionHandler>();
         return await functionHandler.QueryAsync<TFunctionOutputDto>(contractAddress, contractFunction);
+    }
+
+    protected async Task<TransactionReceipt?> CallWriteContractFunctionAsync<TFunctionHandler>(
+        TFunctionHandler contractFunction,
+        string contractAddress,
+        BlockchainNetwork blockchainNetwork,
+        CancellationToken cancellationToken)
+        where TFunctionHandler : FunctionMessage, new()
+    {
+        _ = Guard.NotNull(contractFunction, nameof(contractFunction));
+        _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
+        _ = Guard.NotNull(_web3Clients[blockchainNetwork], nameof(_web3Clients));
+
+        IContractTransactionHandler<TFunctionHandler> functionHandler =
+            _web3Clients[blockchainNetwork].Eth.GetContractTransactionHandler<TFunctionHandler>();
+        return await functionHandler.SendRequestAndWaitForReceiptAsync(
+            contractAddress,
+            contractFunction,
+            cancellationToken);
     }
 
     protected async Task<List<T>?> GetEventAsync<T>(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1) where T : new()
@@ -54,13 +87,8 @@ public abstract partial class EvmBlockchainServiceBase
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
 
-        Web3? web3Client = GetWeb3Client(blockchainNetwork);
-        if (web3Client == null)
-        {
-            return default;
-        }
-
-        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        TransactionReceipt? transactionReceipt =
+            await GetEventsTransactionReceiptAsync(contractAddress, transactionHash, blockchainNetwork);
         if (transactionReceipt == null)
         {
             return default;
@@ -90,20 +118,16 @@ public abstract partial class EvmBlockchainServiceBase
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
         _ = Guard.NotNullOrWhiteSpace(eventName, nameof(eventName));
         _ = Guard.NotNullOrWhiteSpace(jsonAbi, nameof(jsonAbi));
+        _ = Guard.NotNull(_web3Clients[blockchainNetwork], nameof(_web3Clients));
 
-        Web3? web3Client = GetWeb3Client(blockchainNetwork);
-        if (web3Client == null)
-        {
-            return default;
-        }
-
-        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        TransactionReceipt? transactionReceipt =
+            await GetEventsTransactionReceiptAsync(contractAddress, transactionHash, blockchainNetwork);
         if (transactionReceipt == null)
         {
             return default;
         }
 
-        Contract contract = web3Client.Eth.GetContract(jsonAbi, contractAddress);
+        Contract contract = _web3Clients[blockchainNetwork].Eth.GetContract(jsonAbi, contractAddress);
         List<JObject>? eventLogs = transactionReceipt.DecodeAllEventsToJObjectsWithName(eventName, contract);
         if (eventLogs == null)
         {
@@ -136,20 +160,15 @@ public abstract partial class EvmBlockchainServiceBase
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
         _ = Guard.NotNullOrWhiteSpace(eventName, nameof(eventName));
         _ = Guard.NotNullOrWhiteSpace(jsonAbi, nameof(jsonAbi));
+        _ = Guard.NotNull(_web3Clients[blockchainNetwork], nameof(_web3Clients));
 
-        Web3? web3Client = GetWeb3Client(blockchainNetwork);
-        if (web3Client == null)
-        {
-            return default;
-        }
-
-        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(contractAddress, transactionHash, blockchainNetwork);
         if (transactionReceipt == null)
         {
             return default;
         }
 
-        Contract contract = web3Client.Eth.GetContract(jsonAbi, contractAddress);
+        Contract contract = _web3Clients[blockchainNetwork].Eth.GetContract(jsonAbi, contractAddress);
 
         IEnumerable<string> signatures = contract.ExtractSignaturesWithName(eventName);
         if (signatures == null)
@@ -192,20 +211,15 @@ public abstract partial class EvmBlockchainServiceBase
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
         _ = Guard.NotNullOrWhiteSpace(eventSha3Signature, nameof(eventSha3Signature));
         _ = Guard.NotNullOrWhiteSpace(jsonAbi, nameof(jsonAbi));
+        _ = Guard.NotNull(_web3Clients[blockchainNetwork], nameof(_web3Clients));
 
-        Web3? web3Client = GetWeb3Client(blockchainNetwork);
-        if (web3Client == null)
-        {
-            return default;
-        }
-
-        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(web3Client, contractAddress, transactionHash, blockchainNetwork);
+        TransactionReceipt? transactionReceipt = await GetEventsTransactionReceiptAsync(contractAddress, transactionHash, blockchainNetwork);
         if (transactionReceipt == null)
         {
             return default;
         }
 
-        Contract contract = web3Client.Eth.GetContract(jsonAbi, contractAddress);
+        Contract contract = _web3Clients[blockchainNetwork].Eth.GetContract(jsonAbi, contractAddress);
         List<JObject>? eventLogs = transactionReceipt.DecodeAllEventsToJObjectsWithSha3Signature(eventSha3Signature, contract);
         if (eventLogs == null)
         {
@@ -230,11 +244,11 @@ public abstract partial class EvmBlockchainServiceBase
         return JsonConvert.SerializeObject(eventLogs);
     }
 
-    protected async Task<TransactionReceipt?> GetEventsTransactionReceiptAsync(Web3 web3Client, string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork)
+    protected async Task<TransactionReceipt?> GetEventsTransactionReceiptAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork)
     {
-        _ = Guard.NotNull(web3Client, nameof(web3Client));
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
+        _ = Guard.NotNull(_web3Clients[blockchainNetwork], nameof(_web3Clients));
 
         if (!TransactionHashRegex().IsMatch(transactionHash))
         {
@@ -242,7 +256,7 @@ public abstract partial class EvmBlockchainServiceBase
             return default;
         }
 
-        TransactionReceipt transactionReceipt = await web3Client.Eth.Transactions.GetTransactionReceipt.SendRequestAsync(transactionHash);
+        TransactionReceipt transactionReceipt = await _web3Clients[blockchainNetwork].Eth.Transactions.GetTransactionReceipt.SendRequestAsync(transactionHash);
         if (transactionReceipt == null)
         {
             _logger.NullTransactionReceiptForError(blockchainNetwork, transactionHash);
@@ -293,7 +307,7 @@ public abstract partial class EvmBlockchainServiceBase
         return blockchainNetworkProperty;
     }
 
-    protected Web3? GetWeb3Client(BlockchainNetwork blockchainNetwork)
+    protected Web3? GetWeb3Client(BlockchainNetwork blockchainNetwork, Account? account = null)
     {
         string? rpcUrl = GetPropertyForBlockchainNetwork(_blockchainOptions.RpcUrls!, blockchainNetwork);
         if (string.IsNullOrWhiteSpace(rpcUrl))
@@ -302,7 +316,7 @@ public abstract partial class EvmBlockchainServiceBase
             return default;
         }
 
-        return new Web3(rpcUrl);
+        return account == null ? new Web3(rpcUrl) : new Web3(account, rpcUrl);
     }
 
     [GeneratedRegex(RegexTransactionHash)]
