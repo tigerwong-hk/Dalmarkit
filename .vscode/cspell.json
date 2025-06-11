@@ -6,7 +6,10 @@
         "arbitrum",
         "aspnetcore",
         "backoffice",
+        "buildtransitive",
         "cardano",
+        "ciphertext",
+        "contentfiles",
         "cronos",
         "dalmarkit",
         "devcontainers",
@@ -21,6 +24,7 @@
         "nupkg",
         "paginators",
         "pkcs",
+        "roslynator",
         "softprops",
         "solana",
         "webapi"

@@ -5,10 +5,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AutoMapper" Version="13.0.1" />
     <PackageReference Include="AWSSDK.CloudFront" Version="3.7.403.3" />
+    <PackageReference Include="AWSSDK.CloudWatchEvents" Version="3.7.400.164" />
     <PackageReference Include="AWSSDK.CognitoIdentityProvider" Version="3.7.404.2" />
+    <PackageReference Include="AWSSDK.Lambda" Version="3.7.412.48" />
     <PackageReference Include="AWSSDK.Route53" Version="3.7.403.16" />
     <PackageReference Include="AWSSDK.S3" Version="3.7.410.1" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="3.7.405.22" />
     <PackageReference Include="Roslynator.Analyzers" Version="4.12.9">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
