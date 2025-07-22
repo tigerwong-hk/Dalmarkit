@@ -1,14 +1,11 @@
-using AutoMapper;
 using Dalmarkit.Common.Api.Responses;
 using Dalmarkit.Common.Errors;
 using Dalmarkit.Common.Validation;
 
 namespace Dalmarkit.EntityFrameworkCore.Services.ApplicationServices;
 
-public abstract class ApplicationServiceBase(IMapper mapper)
+public abstract class ApplicationServiceBase()
 {
-    protected IMapper Mapper { get; } = Guard.NotNull(mapper, nameof(mapper));
-
     protected static Result<T, ErrorDetail> Error<T>(ErrorDetail errorDetailTemplate, params object[] args)
     {
         _ = Guard.NotNull(errorDetailTemplate, nameof(errorDetailTemplate));

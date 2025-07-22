@@ -1,8 +1,6 @@
-using AutoMapper;
-
 namespace Dalmarkit.EntityFrameworkCore.Services.ApplicationServices;
 
-public abstract class ApplicationQueryServiceBase(IMapper mapper) : ApplicationServiceBase(mapper)
+public abstract class ApplicationQueryServiceBase() : ApplicationServiceBase()
 {
     protected virtual async Task<string[]> GetEnumNamesAsync(Type enumType)
     {
