@@ -18,7 +18,7 @@ public static class IdentityExtensions
         return claim is null ? string.Empty : claim.Value;
     }
 
-    public static string GetClientId(this IIdentity identity)
+    public static string GetAppClientId(this IIdentity identity)
     {
         return GetClaimValue(identity, AwsCognitoJwtClaims.ClientId);
     }
