@@ -54,7 +54,7 @@ public static class ModelBuilderExtensions
         _ = modelBuilder.BuildBasicEntity<T>();
 
         _ = modelBuilder.Entity<T>()
-            .HasIndex(e => new { e.CreateRequestId, e.ClientId, e.EntityHash })
+            .HasIndex(e => new { e.CreateRequestId, e.AppClientId, e.EntityHash })
             .IsUnique();
 
         return modelBuilder;
@@ -66,7 +66,7 @@ public static class ModelBuilderExtensions
         _ = modelBuilder.BuildBasicReadWriteEntity<T>();
 
         _ = modelBuilder.Entity<T>()
-            .HasIndex(e => new { e.CreateRequestId, e.ClientId, e.EntityHash })
+            .HasIndex(e => new { e.CreateRequestId, e.AppClientId, e.EntityHash })
             .IsUnique();
 
         return modelBuilder;
@@ -77,7 +77,7 @@ public static class ModelBuilderExtensions
     {
         _ = modelBuilder.BuildBasicEntity<T>();
 
-        _ = modelBuilder.Entity<T>().HasIndex(e => new { e.CreateRequestId, e.ClientId }).IsUnique();
+        _ = modelBuilder.Entity<T>().HasIndex(e => new { e.CreateRequestId, e.AppClientId }).IsUnique();
 
         return modelBuilder;
     }
@@ -87,7 +87,7 @@ public static class ModelBuilderExtensions
     {
         _ = modelBuilder.BuildBasicReadWriteEntity<T>();
 
-        _ = modelBuilder.Entity<T>().HasIndex(e => new { e.CreateRequestId, e.ClientId }).IsUnique();
+        _ = modelBuilder.Entity<T>().HasIndex(e => new { e.CreateRequestId, e.AppClientId }).IsUnique();
 
         return modelBuilder;
     }
@@ -95,7 +95,7 @@ public static class ModelBuilderExtensions
     private static ModelBuilder BuildBasicEntity<T>(this ModelBuilder modelBuilder)
         where T : EntityBase
     {
-        _ = modelBuilder.Entity<T>().HasIndex(t => t.ClientId);
+        _ = modelBuilder.Entity<T>().HasIndex(t => t.AppClientId);
 
         _ = modelBuilder.Entity<T>().Property(t => t.CreatedOn).HasDefaultValueSql(DefaultDateTimeValueSql);
         _ = modelBuilder.Entity<T>().HasIndex(t => t.CreatedOn);

@@ -6,7 +6,7 @@ namespace Dalmarkit.Common.Entities.BaseEntities;
 public abstract class EntityBase : IDataModelBase
 {
     [Required]
-    public string ClientId { get; set; } = null!;
+    public string AppClientId { get; set; } = null!;
 
     [Required]
     public DateTime CreatedOn { get; set; }
