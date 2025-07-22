@@ -49,10 +49,10 @@ public class AwsS3Service(TransferUtility transferUtility,
         Stream stream,
         string bucketName,
         string folderName,
-        string? cdnCacheId,
-        bool isReplaceObject,
-        string traceId,
-        CancellationToken cancellationToken)
+        string? cdnCacheId = null,
+        bool isReplaceObject = false,
+        string? traceId = null,
+        CancellationToken cancellationToken = default)
     {
         _ = Guard.NotEmpty(parentId, nameof(parentId));
         _ = Guard.NotEmpty(objectId, nameof(objectId));
@@ -60,11 +60,11 @@ public class AwsS3Service(TransferUtility transferUtility,
         _ = Guard.NotNull(stream, nameof(stream));
         _ = Guard.NotNullOrWhiteSpace(bucketName, nameof(bucketName));
         _ = Guard.NotNullOrWhiteSpace(folderName, nameof(folderName));
-        _ = Guard.NotNull(traceId, nameof(traceId));
 
         if (isReplaceObject)
         {
             _ = Guard.NotNullOrWhiteSpace(cdnCacheId, nameof(cdnCacheId));
+            _ = Guard.NotNull(traceId, nameof(traceId));
         }
 
         if (stream == Stream.Null)
@@ -80,7 +80,7 @@ public class AwsS3Service(TransferUtility transferUtility,
 
         if (isReplaceObject)
         {
-            await InvalidateObjectsInCdnAsync([destFilePath], cdnCacheId!, traceId, cancellationToken);
+            await InvalidateObjectsInCdnAsync([destFilePath], cdnCacheId!, traceId!, cancellationToken);
         }
     }
 
