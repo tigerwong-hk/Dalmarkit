@@ -65,6 +65,24 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         return subAttribute?.Value;
     }
 
+    public async Task AdminDeleteUserAsync(string identityProviderId, string username)
+    {
+        _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
+        _ = Guard.NotNullOrWhiteSpace(username, nameof(username));
+
+        AdminDeleteUserRequest request = new()
+        {
+            Username = username,
+            UserPoolId = identityProviderId,
+        };
+
+        AdminDeleteUserResponse response = await _cognitoService.AdminDeleteUserAsync(request);
+        if (response.HttpStatusCode is < HttpStatusCode.OK or >= HttpStatusCode.Ambiguous)
+        {
+            throw new HttpRequestException($"Error status for AdminDeleteUser({identityProviderId}, {username}) request: {response.HttpStatusCode}");
+        }
+    }
+
     public async Task AdminDisableUserAsync(string identityProviderId, string username)
     {
         _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
