@@ -46,7 +46,7 @@ public class AwsCloudFrontService(AmazonCloudFrontClient cloudFrontClient) : IAw
         AssociateAliasResponse associateAliasResponse = await _cloudFrontClient.AssociateAliasAsync(associateAliasRequest, cancellationToken);
         if (associateAliasResponse.HttpStatusCode is < HttpStatusCode.OK or >= HttpStatusCode.Ambiguous)
         {
-            throw new HttpRequestException($"Error status for AssociateAlias({cname}, {cdnCacheId} request: {associateAliasResponse.HttpStatusCode}");
+            throw new HttpRequestException($"Error status for AssociateAlias({cname}, {cdnCacheId}) request: {associateAliasResponse.HttpStatusCode}");
         }
     }
 
