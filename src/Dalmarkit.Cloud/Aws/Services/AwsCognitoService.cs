@@ -45,7 +45,6 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
                     "EMAIL"
                 ],
             ForceAliasCreation = false,
-            MessageAction = "RESEND",
             UserAttributes =
                 [
                     new AttributeType { Name = "email", Value = emailAddress },
