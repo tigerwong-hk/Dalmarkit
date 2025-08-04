@@ -51,6 +51,7 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
                     new AttributeType { Name = "email", Value = emailAddress },
                     new AttributeType { Name = "phone_number", Value = phoneNumber }
                 ],
+            Username = emailAddress,
             UserPoolId = identityProviderId,
         };
 
