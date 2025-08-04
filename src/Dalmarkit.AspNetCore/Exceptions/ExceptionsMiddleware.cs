@@ -51,6 +51,20 @@ public class ExceptionsMiddleware
 
             await HandleExceptionsAsync(ex, StatusCodes.Status409Conflict, ErrorTypes.ResourceConflict);
         }
+        // catch PostgreSQL foreign key violation exception
+        // https://www.postgresql.org/docs/current/errcodes-appendix.html
+        catch (DbUpdateException ex) when (ex.InnerException != null
+            && ex.InnerException.GetType() == typeof(PostgresException)
+            && ((PostgresException)ex.InnerException).SqlState == "23503")
+        {
+            if (context.Response.HasStarted)
+            {
+                _logger.ResponseAlreadyStartedForException(ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                throw;
+            }
+
+            await HandleExceptionsAsync(ex, StatusCodes.Status422UnprocessableEntity, ErrorTypes.BadRequest);
+        }
         catch (Exception ex)
         {
             if (context.Response.HasStarted)
