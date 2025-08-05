@@ -7,6 +7,7 @@ public interface IIamService
     Task AdminDeleteUserAsync(string identityProviderId, string username);
     Task AdminDisableUserAsync(string identityProviderId, string username);
     Task AdminEnableUserAsync(string identityProviderId, string username);
+    Task<IEnumerable<string>> AdminListGroupsForUserAsync(string identityProviderId, string username);
     Task AdminRemoveUserFromGroupAsync(string identityProviderId, string groupName, string username);
     Task AdminUpdateUserAsync(string identityProviderId, string emailAddress, string phoneNumber, string username);
     Task<string?> GetUserEmailAddressAsync(string identityProviderId, string userId);
