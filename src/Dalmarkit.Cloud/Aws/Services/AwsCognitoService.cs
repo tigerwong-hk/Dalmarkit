@@ -121,6 +121,28 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         }
     }
 
+    public async Task<IEnumerable<string>> AdminListGroupsForUserAsync(string identityProviderId, string username)
+    {
+        _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
+        _ = Guard.NotNullOrWhiteSpace(username, nameof(username));
+
+        AdminListGroupsForUserRequest request = new()
+        {
+            Username = username,
+            UserPoolId = identityProviderId,
+        };
+
+        List<GroupType> groups = [];
+
+        IAdminListGroupsForUserPaginator groupsPaginator = _cognitoService.Paginators.AdminListGroupsForUser(request);
+        await foreach (AdminListGroupsForUserResponse? response in groupsPaginator.Responses)
+        {
+            groups.AddRange(response.Groups);
+        }
+
+        return groups.Select(g => g.GroupName);
+    }
+
     public async Task AdminRemoveUserFromGroupAsync(string identityProviderId, string groupName, string username)
     {
         _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
