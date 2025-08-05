@@ -153,7 +153,9 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
             UserAttributes =
                 [
                     new AttributeType { Name = "email", Value = emailAddress },
-                    new AttributeType { Name = "phone_number", Value = phoneNumber }
+                    new AttributeType { Name = "email_verified", Value = "true" },
+                    new AttributeType { Name = "phone_number", Value = phoneNumber },
+                    new AttributeType { Name = "phone_number_verified", Value = "true" },
                 ],
             Username = username,
             UserPoolId = identityProviderId,
