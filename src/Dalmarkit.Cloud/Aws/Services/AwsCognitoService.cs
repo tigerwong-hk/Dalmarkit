@@ -190,6 +190,40 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         }
     }
 
+    public async Task<UserType?> GetUserDetailAsync(string identityProviderId, string emailAddress)
+    {
+        _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
+        _ = Guard.NotNullOrWhiteSpace(emailAddress, nameof(emailAddress));
+
+        ListUsersRequest request = new()
+        {
+            Filter = $"\"email\"=\"{emailAddress}\"",
+            UserPoolId = identityProviderId
+        };
+
+        List<UserType> users = [];
+
+        IListUsersPaginator usersPaginator = _cognitoService.Paginators.ListUsers(request);
+        await foreach (ListUsersResponse? response in usersPaginator.Responses)
+        {
+            users.AddRange(response.Users);
+        }
+
+        if (users.Count == 0)
+        {
+            _logger.EmailAddressNotFoundForError(emailAddress);
+            return null;
+        }
+
+        if (users.Count > 1)
+        {
+            _logger.MultipleSameEmailAddressFoundForError(emailAddress);
+            return null;
+        }
+
+        return users[0];
+    }
+
     public async Task<string?> GetUserEmailAddressAsync(string identityProviderId, string userId)
     {
         _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
@@ -232,16 +266,30 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
 public static partial class AwsCognitoServiceLogs
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 0,
         Level = LogLevel.Information,
         Message = "Multiple same user ID found for: {UserId}")]
     public static partial void MultipleSameUserIdFoundForError(
         this ILogger logger, string userId);
 
     [LoggerMessage(
-        EventId = 0,
+        EventId = 1,
         Level = LogLevel.Information,
         Message = "User ID not found for: {UserId}")]
     public static partial void UserIdNotFoundForError(
         this ILogger logger, string userId);
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Information,
+        Message = "Multiple same email address found for: {EmailAddress}")]
+    public static partial void MultipleSameEmailAddressFoundForError(
+        this ILogger logger, string emailAddress);
+
+    [LoggerMessage(
+        EventId = 3,
+        Level = LogLevel.Information,
+        Message = "Email address not found for: {EmailAddress}")]
+    public static partial void EmailAddressNotFoundForError(
+        this ILogger logger, string emailAddress);
 }
