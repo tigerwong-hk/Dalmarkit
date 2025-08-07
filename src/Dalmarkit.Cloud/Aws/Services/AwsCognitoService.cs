@@ -32,7 +32,7 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         }
     }
 
-    public async Task<string?> AdminCreateUserAsync(string identityProviderId, string emailAddress, string phoneNumber)
+    public async Task<string?> AdminCreateUserAsync(string identityProviderId, string emailAddress, string phoneNumber, bool resendInvitationMessage = false)
     {
         _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
         _ = Guard.NotNullOrWhiteSpace(emailAddress, nameof(emailAddress));
@@ -55,6 +55,11 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
             Username = emailAddress,
             UserPoolId = identityProviderId,
         };
+
+        if (resendInvitationMessage)
+        {
+            request.MessageAction = MessageActionType.RESEND;
+        }
 
         AdminCreateUserResponse response = await _cognitoService.AdminCreateUserAsync(request);
         if (response.HttpStatusCode is < HttpStatusCode.OK or >= HttpStatusCode.Ambiguous)
@@ -161,6 +166,11 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         {
             throw new HttpRequestException($"Error status for AdminRemoveUserFromGroup({identityProviderId}, {groupName}, {username}) request: {response.HttpStatusCode}");
         }
+    }
+
+    public async Task<string?> AdminResendInvitationMessageAsync(string identityProviderId, string emailAddress, string phoneNumber)
+    {
+        return await AdminCreateUserAsync(identityProviderId, emailAddress, phoneNumber, true);
     }
 
     public async Task AdminUpdateUserAsync(string identityProviderId, string emailAddress, string phoneNumber, string username)
