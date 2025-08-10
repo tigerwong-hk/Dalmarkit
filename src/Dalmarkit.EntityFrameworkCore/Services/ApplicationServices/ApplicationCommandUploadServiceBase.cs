@@ -16,7 +16,7 @@ public abstract class ApplicationCommandUploadServiceBase() : ApplicationService
         TUploadObjectDataService uploadObjectDataService,
         TObjectStorageService objectStorageService,
         Func<UploadObjectInputDto, TUploadObjectEntity> inputMapFunction,
-        Func<TUploadObjectEntity, string, TUploadObjectDto> outputMapFunction,
+        Func<TUploadObjectEntity, TUploadObjectDto> outputMapFunction,
         UploadObjectInputDto inputDto,
         Stream stream,
         string bucketName,
@@ -83,10 +83,7 @@ public abstract class ApplicationCommandUploadServiceBase() : ApplicationService
         _ = await uploadObjectDataService.CreateAsync(newEntry, auditDetail, cancellationToken);
         _ = await uploadObjectDataService.SaveChangesAsync(cancellationToken);
 
-        TUploadObjectDto output = outputMapFunction(
-            newEntry,
-            ObjectStorageAccess.GetPublicStorageObjectUrl(
-                bucketName, rootFolderName, inputDto.ParentId, newEntry.SelfId, newEntry.ObjectExtension));
+        TUploadObjectDto output = outputMapFunction(newEntry);
 
         return Ok(output);
     }
