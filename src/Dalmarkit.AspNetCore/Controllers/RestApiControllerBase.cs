@@ -46,10 +46,10 @@ public abstract class RestApiControllerBase : ControllerBase
         string userId = User.Identity!.GetAccountId();
         _ = Guard.NotNullOrWhiteSpace(userId, nameof(userId));
 
-        string clientId = User.Identity!.GetClientId();
-        _ = Guard.NotNullOrWhiteSpace(clientId, nameof(clientId));
+        string appClientId = User.Identity!.GetAppClientId();
+        _ = Guard.NotNullOrWhiteSpace(appClientId, nameof(appClientId));
 
-        return new AuditDetail(clientId, userId, DateTime.UtcNow);
+        return new AuditDetail(appClientId, userId, DateTime.UtcNow);
     }
 
     private static JsonResult Failure(ErrorDetail errorDetail)

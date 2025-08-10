@@ -16,7 +16,7 @@ public abstract class DataServiceBase<TDbContext, TEntity>(TDbContext dbContext)
         AuditDetail auditDetail,
         CancellationToken cancellationToken = default)
     {
-        entity.ClientId = auditDetail.ClientId;
+        entity.AppClientId = auditDetail.AppClientId;
         entity.CreatedOn = auditDetail.ModifiedOn;
         entity.CreatorId = auditDetail.ModifierId;
 
