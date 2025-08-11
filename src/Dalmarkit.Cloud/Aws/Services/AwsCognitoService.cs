@@ -200,7 +200,7 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         }
     }
 
-    public async Task<UserType?> GetUserDetailAsync(string identityProviderId, string emailAddress)
+    public async Task<UserType?> GetUserDetailByEmailAddressAsync(string identityProviderId, string emailAddress)
     {
         _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
         _ = Guard.NotNullOrWhiteSpace(emailAddress, nameof(emailAddress));
@@ -228,6 +228,40 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         if (users.Count > 1)
         {
             _logger.MultipleSameEmailAddressFoundForError(emailAddress);
+            return null;
+        }
+
+        return users[0];
+    }
+
+    public async Task<UserType?> GetUserDetailByUserIdAsync(string identityProviderId, string userId)
+    {
+        _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
+        _ = Guard.NotNullOrWhiteSpace(userId, nameof(userId));
+
+        ListUsersRequest request = new()
+        {
+            Filter = $"\"sub\"=\"{userId}\"",
+            UserPoolId = identityProviderId
+        };
+
+        List<UserType> users = [];
+
+        IListUsersPaginator usersPaginator = _cognitoService.Paginators.ListUsers(request);
+        await foreach (ListUsersResponse? response in usersPaginator.Responses)
+        {
+            users.AddRange(response.Users);
+        }
+
+        if (users.Count == 0)
+        {
+            _logger.UserIdNotFoundForError(userId);
+            return null;
+        }
+
+        if (users.Count > 1)
+        {
+            _logger.MultipleSameUserIdFoundForError(userId);
             return null;
         }
 
