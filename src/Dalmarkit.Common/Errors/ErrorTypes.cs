@@ -30,5 +30,7 @@ public class ErrorTypes : ErrorTypesBase
 
     public static ErrorDetail ServiceUnavailable => GetErrorDetail(nameof(ServiceUnavailable), ErrorMessages.ServiceUnavailable);
 
+    public static ErrorDetail TooManyRequests => GetErrorDetail(nameof(TooManyRequests), ErrorMessages.TooManyRequests);
+
     public static ErrorDetail TransactionHashInvalid => GetErrorDetail(nameof(TransactionHashInvalid), ErrorMessages.TransactionHashInvalid);
 }

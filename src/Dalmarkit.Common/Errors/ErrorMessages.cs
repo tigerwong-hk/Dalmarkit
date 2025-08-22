@@ -18,6 +18,7 @@ public static class ErrorMessages
     public const string ServerError = "Server error";
     public const string ServiceUnavailable = "Service unavailable";
     public const string StreamNull = "Null stream";
+    public const string TooManyRequests = "Too many requests";
     public const string TransactionHashInvalid = "Invalid transaction hash: {0}";
     public const string ValueIsEmpty = "Value is empty";
     public const string ValueIsNullOrWhiteSpace = "Value is null or whitespace";
