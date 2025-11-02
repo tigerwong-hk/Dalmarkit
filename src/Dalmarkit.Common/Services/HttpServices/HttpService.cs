@@ -39,15 +39,16 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
         _disposed = true;
     }
 
-    public static IServiceCollection AddHttpService<THttpClientOptions>(
+    public static IServiceCollection AddHttpService<THttpClientOptions, THttpService>(
         IServiceCollection services, string configSectionKey, IConfiguration config)
         where THttpClientOptions : IHttpClientOptions
+        where THttpService : class, IHttpService
     {
         THttpClientOptions? httpClientOptions = config.GetSection(configSectionKey).Get<THttpClientOptions>();
         _ = Guard.NotNull(httpClientOptions, nameof(httpClientOptions));
         httpClientOptions!.Validate();
 
-        IHttpClientBuilder httpClientBuilder = services.AddHttpClient<IHttpService, HttpService>(
+        IHttpClientBuilder httpClientBuilder = services.AddHttpClient<THttpService>(
             client =>
             {
                 client.BaseAddress = new Uri(httpClientOptions.BaseUrl);
