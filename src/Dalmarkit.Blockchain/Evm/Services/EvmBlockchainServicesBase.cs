@@ -19,7 +19,7 @@ namespace Dalmarkit.Blockchain.Evm.Services;
 public abstract partial class EvmBlockchainServiceBase
 {
     public const string RegexTransactionHash = "^0x[0-9A-Fa-f]{64}$";
-    private readonly IDictionary<BlockchainNetwork, Web3> _web3Clients = new Dictionary<BlockchainNetwork, Web3>();
+    private readonly Dictionary<BlockchainNetwork, Web3> _web3Clients = [];
     private readonly EvmBlockchainOptions _blockchainOptions;
     private readonly EvmWalletOptions? _walletOptions;
     private readonly ILogger _logger;
