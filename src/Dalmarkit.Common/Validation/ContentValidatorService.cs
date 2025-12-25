@@ -7,7 +7,7 @@ namespace Dalmarkit.Common.Validation;
 
 public class ContentValidatorService : IContentValidatorService
 {
-    private readonly ContentInspector _contentInspector;
+    private readonly IContentInspector _contentInspector;
     private readonly ILogger _logger;
 
     public ContentValidatorService(ImmutableArray<Definition> supportedDefinitions, ILogger<ContentValidatorService> logger)

@@ -7,7 +7,7 @@ namespace Dalmarkit.Common.Validation;
 
 public static class ContentValidator
 {
-    public static bool IsValid(ContentInspector contentInspector, Stream contentStream, string contentType, string fileExtension, ILogger logger)
+    public static bool IsValid(IContentInspector contentInspector, Stream contentStream, string contentType, string fileExtension, ILogger logger)
     {
         _ = Guard.NotNull(contentInspector, nameof(contentInspector));
         _ = Guard.NotNull(contentStream, nameof(contentStream));
@@ -50,7 +50,7 @@ public static class ContentValidator
             select x.Extension
         );
 
-        bool isFileExtensionValid = fileExtensionResults.Contains(fileExtension!.ToLowerInvariant());
+        bool isFileExtensionValid = fileExtensionResults.Contains(fileExtension.ToLowerInvariant());
         if (!isFileExtensionValid)
         {
             logger.FileExtensionNotFound(string.Join(',', fileExtensionResults), fileExtension);
@@ -66,7 +66,7 @@ public static class ContentValidator
             select x.MimeType
         );
 
-        bool isMimeTypeValid = mimeTypeResults.Contains(contentType!.ToLowerInvariant());
+        bool isMimeTypeValid = mimeTypeResults.Contains(contentType.ToLowerInvariant());
         if (isMimeTypeValid)
         {
             return true;

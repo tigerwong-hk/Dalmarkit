@@ -39,7 +39,7 @@ public abstract class ApplicationCommandReadWriteDependentsServiceBase()
         }
 
         List<Guid> modifiedDependentIds = [];
-        foreach (TDeleteDependentInputDto dependentDto in inputDto.Dependents!)
+        foreach (TDeleteDependentInputDto dependentDto in inputDto.Dependents)
         {
             TDependentEntity? retrievedEntity = await dependentDataService.FindEntityIdAsync(dependentDto.DependentId, false, cancellationToken);
             if (retrievedEntity == null || retrievedEntity.PrincipalId != inputDto.ParentId)
@@ -86,7 +86,7 @@ public abstract class ApplicationCommandReadWriteDependentsServiceBase()
         }
 
         List<Guid> modifiedDependentIds = [];
-        foreach (TUpdateDependentInputDto dependentDto in inputDto.Dependents!)
+        foreach (TUpdateDependentInputDto dependentDto in inputDto.Dependents)
         {
             TDependentEntity? retrievedEntity = await dependentDataService.FindEntityIdAsync(dependentDto.DependentId, false, cancellationToken);
             if (retrievedEntity == null || retrievedEntity.PrincipalId != inputDto.ParentId)
