@@ -42,11 +42,11 @@ public abstract class ApplicationCommandReadOnlyDependentsServiceBase()
         }
 
         List<TDependentEntity> addedDependents = [];
-        foreach (TDependentInputDto? dependentDto in inputDto.Dependents!)
+        foreach (TDependentInputDto? dependentDto in inputDto.Dependents)
         {
             TDependentEntity newEntry = inputMapFunction(dependentDto);
             newEntry.PrincipalId = inputDto.ParentId;
-            newEntry.CreateRequestId = inputDto.CreateRequestId!;
+            newEntry.CreateRequestId = inputDto.CreateRequestId;
 
             _ = await dependentDataService.CreateAsync(newEntry, auditDetail, cancellationToken);
             addedDependents.Add(newEntry);

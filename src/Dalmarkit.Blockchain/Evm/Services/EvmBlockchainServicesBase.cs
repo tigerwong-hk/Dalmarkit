@@ -3,7 +3,6 @@ using Dalmarkit.Common.Validation;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nethereum.ABI.FunctionEncoding.Attributes;
-using Nethereum.ABI.Model;
 using Nethereum.Contracts;
 using Nethereum.Contracts.ContractHandlers;
 using Nethereum.RPC.Eth.DTOs;
@@ -154,8 +153,6 @@ public abstract partial class EvmBlockchainServiceBase
 
     protected async Task<List<EvmEventDto>?> GetEventsByNameAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, string eventName, string jsonAbi)
     {
-        List<EvmEventDto> evmEventDtos = [];
-
         _ = Guard.NotNullOrWhiteSpace(contractAddress, nameof(contractAddress));
         _ = Guard.NotNullOrWhiteSpace(transactionHash, nameof(transactionHash));
         _ = Guard.NotNullOrWhiteSpace(eventName, nameof(eventName));
@@ -169,40 +166,26 @@ public abstract partial class EvmBlockchainServiceBase
         }
 
         Contract contract = _web3Clients[blockchainNetwork].Eth.GetContract(jsonAbi, contractAddress);
-
-        IEnumerable<string> signatures = contract.ExtractSignaturesWithName(eventName);
-        if (signatures == null)
+        List<JObject>? eventLogs = transactionReceipt.DecodeAllEventsToJObjectsWithName(eventName, contract);
+        if (eventLogs == null)
         {
-            _logger.NoEventSignaturesFoundForError(contractAddress, eventName);
+            _logger.NullEventLogsError(blockchainNetwork, transactionHash);
             return default;
         }
 
-        foreach (JToken log in transactionReceipt.Logs)
+        List<EvmEventDto> result = [];
+        foreach (JObject eventLog in eventLogs)
         {
-            EvmEventDto evmEventDto = log.ToObject<EvmEventDto>();
+            EvmEventDto? evmEventDto = eventLog.ToObject<EvmEventDto>();
             if (evmEventDto == null)
             {
                 continue;
             }
 
-            foreach (string signature in signatures)
-            {
-                if (evmEventDto.Topics[0].Equals($"0x{signature}", StringComparison.OrdinalIgnoreCase))
-                {
-                    EventABI? eventAbi = contract.ExtractEventABIWithSignature(signature);
-                    JObject eventDecoded = eventAbi.DecodeEventToJObject(log);
-
-                    evmEventDto.BlockchainNetwork = blockchainNetwork;
-                    evmEventDto.EventJson = JsonConvert.SerializeObject(eventDecoded);
-                    evmEventDto.EventName = eventName;
-                    evmEventDto.TransactionIndex = transactionReceipt.TransactionIndex.ToString();
-
-                    evmEventDtos.Add(evmEventDto);
-                }
-            }
+            result.Add(evmEventDto);
         }
 
-        return evmEventDtos;
+        return result;
     }
 
     protected async Task<string?> GetEventBySha3SignatureAsync(string contractAddress, string transactionHash, BlockchainNetwork blockchainNetwork, string eventSha3Signature, string jsonAbi, bool disableExactEventLogCountCheck = false, int expectedEventLogsCount = 1)

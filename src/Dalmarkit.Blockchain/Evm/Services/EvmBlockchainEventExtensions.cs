@@ -8,10 +8,9 @@ namespace Dalmarkit.Blockchain.Evm.Services;
 
 public static class EvmBlockchainEventExtensions
 {
-    public static EventABI? ExtractEventABIWithName(this Contract contract, string eventName)
+    public static List<EventABI> ExtractEventABIWithName(this Contract contract, string eventName)
     {
-        IEnumerable<EventABI> eventABIs = contract.ContractBuilder.ContractABI.Events.Where(e => e.Name == eventName);
-        return eventABIs.FirstOrDefault();
+        return [.. contract.ContractBuilder.ContractABI.Events.Where(e => e.Name == eventName)];
     }
 
     public static EventABI? ExtractEventABIWithSignature(this Contract contract, string eventSha3Signature)
@@ -26,13 +25,21 @@ public static class EvmBlockchainEventExtensions
         return contract.ContractBuilder.ContractABI.Events.Where(e => e.Name == eventName).Select(e => e.Sha3Signature);
     }
 
-    public static List<JObject>? DecodeAllEventsToJObjectsWithName(this JArray logs, string eventName, Contract contract)
+    public static List<JObject>? DecodeAllEventsToJObjectsWithName(this FilterLog[] logs, string eventName, Contract contract)
     {
-        EventABI? eventABI = contract.ExtractEventABIWithName(eventName);
-        return eventABI?.DecodeAllEventsToJObjects(logs);
+        List<EventABI> eventAbis = contract.ExtractEventABIWithName(eventName);
+
+        List<JObject> result = [];
+        foreach (EventABI eventAbi in eventAbis)
+        {
+            List<JObject> eventObjects = eventAbi.DecodeAllEventsToJObjects(logs);
+            result.AddRange(eventObjects);
+        }
+
+        return result;
     }
 
-    public static List<JObject>? DecodeAllEventsToJObjectsWithSignature(this JArray logs, string eventSha3Signature, Contract contract)
+    public static List<JObject>? DecodeAllEventsToJObjectsWithSignature(this FilterLog[] logs, string eventSha3Signature, Contract contract)
     {
         EventABI? eventABI = contract.ExtractEventABIWithSignature(eventSha3Signature);
         return eventABI?.DecodeAllEventsToJObjects(logs);
