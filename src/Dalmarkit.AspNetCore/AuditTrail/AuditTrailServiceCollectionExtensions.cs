@@ -13,11 +13,15 @@ public static class AuditLogServiceCollectionExtensions
     /// <typeparam name="TDbContext">database context</typeparam>
     /// <param name="services">service descriptors collection</param>
     /// <param name="connectionString">database connection string</param>
-    public static IServiceCollection AddAuditTrail<TDbContext>(this IServiceCollection services, string connectionString)
+    /// <param name="dbContextOptionsBuilder">action to configure DbContext options</param>
+    public static IServiceCollection AddAuditTrail<TDbContext>(this IServiceCollection services, string connectionString, Action<DbContextOptionsBuilder<TDbContext>> dbContextOptionsBuilder)
         where TDbContext : DbContext
     {
+        DbContextOptionsBuilder<TDbContext> optionsBuilder = new();
+        dbContextOptionsBuilder(optionsBuilder);
+
         _ = Configuration.Setup()
-            .UseCustomProvider(new AuditTrailAuditDataProvider(connectionString))
+            .UseCustomProvider(new AuditTrailAuditDataProvider<TDbContext>(connectionString, optionsBuilder.Options))
             .WithCreationPolicy(EventCreationPolicy.InsertOnStartReplaceOnEnd);
 
         _ = Audit.EntityFramework.Configuration.Setup()
