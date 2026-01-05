@@ -8,14 +8,21 @@ public interface IWebSocketClient : IDisposable
     bool HasReachedMaxReconnectAttempts { get; }
 
     event EventHandler<byte[]>? OnBinaryMessageReceived;
-    event EventHandler<Exception>? OnConnectException;
-    event EventHandler<Exception>? OnDisconnectException;
+    event EventHandler? OnHealthCheckCanceled;
+    event EventHandler<Exception>? OnHealthCheckException;
+    event EventHandler<int>? OnMaxReconnectionAttemptsReached;
+    event EventHandler<Exception>? OnNoServerHeartbeatDisconnectException;
+    event EventHandler<long>? OnNoServerHeartbeatReceived;
     event EventHandler<Exception>? OnProcessReceivedMessageException;
     event EventHandler<Exception>? OnReceiveUnexpectedException;
     event EventHandler<WebSocketException>? OnReceiveWebSocketException;
-    event EventHandler<Exception>? OnReconnectException;
-    event EventHandler<Exception>? OnSendUnexpectedException;
-    event EventHandler<WebSocketException>? OnSendWebSocketException;
+    event EventHandler? OnReconnectCanceled;
+    event EventHandler<string>? OnReconnectError;
+    event EventHandler<ReconnectExceptionEvent>? OnReconnectException;
+    event EventHandler? OnShutdownCheckHealthTaskTimeout;
+    event EventHandler<Exception>? OnShutdownCheckHealthTaskException;
+    event EventHandler? OnShutdownReceiveMessageTaskTimeout;
+    event EventHandler<Exception>? OnShutdownReceiveMessageTaskException;
     event EventHandler<string>? OnTextMessageReceived;
     event EventHandler? OnWebSocketConnected;
     event EventHandler<string?>? OnWebSocketDisconnected;
@@ -31,5 +38,11 @@ public interface IWebSocketClient : IDisposable
         Connected = 30,
         Reconnecting = 40,
         Disconnecting = 50
+    }
+
+    class ReconnectExceptionEvent
+    {
+        public int ReconnectAttempts { get; set; }
+        public Exception ReconnectException { get; set; } = null!;
     }
 }
