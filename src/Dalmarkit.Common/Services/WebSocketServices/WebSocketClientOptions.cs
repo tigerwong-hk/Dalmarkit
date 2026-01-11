@@ -10,7 +10,7 @@ public class WebSocketClientOptions
     public int KeepAliveIntervalMilliseconds { get; set; }
     public int KeepAliveTimeoutMilliseconds { get; set; }
     public long MaxMessageByteSize { get; set; } = 1024 * 1024;
-    public int ReceiveBufferByteSize { get; set; } = 1024 * 4;
+    public int ReceiveBufferByteSize { get; set; } = 1024 * 8;
     public ReconnectionPolicy? Reconnection { get; set; }
     public int RequestTimeoutMilliseconds { get; set; } = 10000;
     public string ServerUrl { get; set; } = string.Empty;
@@ -83,6 +83,6 @@ public class WebSocketClientOptions
     public class ReconnectionPolicy
     {
         public int MaxAttempts { get; set; } = 3;
-        public int DelayMilliseconds { get; set; } = 2000;
+        public int DelayMilliseconds { get; set; } = 5000;
     }
 }
