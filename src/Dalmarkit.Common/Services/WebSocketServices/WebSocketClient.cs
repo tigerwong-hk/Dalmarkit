@@ -443,7 +443,13 @@ public class WebSocketClient : IWebSocketClient
         {
             await _connectionSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-            if (_isDisposed || _connectionState == WebSocketConnectionState.Disconnecting)
+            if (_isDisposed)
+            {
+                _logger.HandleDisconnectWhenDisposedInfo(_options.ServerUrl);
+                return;
+            }
+
+            if (_connectionState == WebSocketConnectionState.Disconnecting)
             {
                 _logger.HandleDisconnectWhenDisconnectingInfo(_options.ServerUrl);
                 return;
@@ -862,96 +868,103 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 320,
         Level = LogLevel.Information,
+        Message = "Handle disconnect when disposed for WebSocket at {SocketUrl}")]
+    public static partial void HandleDisconnectWhenDisposedInfo(
+        this ILogger logger, string socketUrl);
+
+    [LoggerMessage(
+        EventId = 330,
+        Level = LogLevel.Information,
         Message = "Handle disconnect when disconnecting for WebSocket at {SocketUrl}")]
     public static partial void HandleDisconnectWhenDisconnectingInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 330,
+        EventId = 340,
         Level = LogLevel.Information,
         Message = "Handle disconnect semaphore canceled for WebSocket at {SocketUrl}")]
     public static partial void HandleDisconnectSemaphoreCanceledInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 340,
+        EventId = 350,
         Level = LogLevel.Debug,
         Message = "Received {MessageType} message for WebSocket at {SocketUrl} with size of {MessageSize} bytes")]
     public static partial void ReceivedMessageDebug(
         this ILogger logger, string messageType, string socketUrl, long messageSize);
 
     [LoggerMessage(
-        EventId = 350,
+        EventId = 360,
         Level = LogLevel.Error,
         Message = "Process received {MessageType} message exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void ProcessReceiveMessageException(
         this ILogger logger, string messageType, string socketUrl, string message, string? innerException, string? stackTrace);
 
     [LoggerMessage(
-        EventId = 360,
+        EventId = 370,
         Level = LogLevel.Warning,
         Message = "Received close message for WebSocket at {SocketUrl}")]
     public static partial void ReceivedCloseMessageWarning(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 370,
+        EventId = 380,
         Level = LogLevel.Warning,
         Message = "Received message exceed max allowed size of {MaxAllowedByteSize} bytes for WebSocket at {SocketUrl}: {messageByteSize} bytes")]
     public static partial void ReceivedMessageExceedsMaxAllowedSizeWarning(
         this ILogger logger, long maxAllowedByteSize, string socketUrl, long messageByteSize);
 
     [LoggerMessage(
-        EventId = 380,
+        EventId = 390,
         Level = LogLevel.Information,
         Message = "Message receiving canceled for WebSocket at {SocketUrl}")]
     public static partial void MessagingReceivingCanceledInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 390,
+        EventId = 400,
         Level = LogLevel.Information,
         Message = "Message receiving canceled exception for WebSocket at {SocketUrl}")]
     public static partial void MessagingReceivingCanceledExceptionInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 400,
+        EventId = 410,
         Level = LogLevel.Error,
         Message = "Receive WebSocket exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void ReceiveWebSocketException(
         this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
 
     [LoggerMessage(
-        EventId = 410,
+        EventId = 420,
         Level = LogLevel.Error,
         Message = "Receive unexpected exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void ReceiveUnexpectedException(
         this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
 
     [LoggerMessage(
-        EventId = 420,
+        EventId = 430,
         Level = LogLevel.Information,
         Message = "Health check task shutdown timeout for WebSocket at {SocketUrl}")]
     public static partial void HealthCheckTaskShutdownTimeoutInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 430,
+        EventId = 440,
         Level = LogLevel.Error,
         Message = "Health check task shutdown exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void HealthCheckTaskShutdownException(
         this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
 
     [LoggerMessage(
-        EventId = 440,
+        EventId = 450,
         Level = LogLevel.Information,
         Message = "Receive message task shutdown timeout for WebSocket at {SocketUrl}")]
     public static partial void ReceiveMessageTaskShutdownTimeoutInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 450,
+        EventId = 460,
         Level = LogLevel.Error,
         Message = "Receive message task shutdown exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void ReceiveMessageTaskShutdownException(
