@@ -242,7 +242,7 @@ public class WebSocketClient : IWebSocketClient
             }
             catch (Exception ex)
             {
-                _logger.ReconnectFailedException(_options.ServerUrl, _reconnectAttempts, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                _logger.ReconnectFailedException(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts, ex.Message, ex.InnerException?.Message, ex.StackTrace);
                 await _eventDispatcher.DispatchEventAsync(new OnReconnectFailure(_reconnectAttempts, ex), cancellationToken).ConfigureAwait(false);
             }
         }
@@ -317,14 +317,15 @@ public class WebSocketClient : IWebSocketClient
             connectionTimeoutCts.CancelAfter(_options.ConnectionTimeoutMilliseconds);
         }
 
-        _logger.ConnectingToWebSocketInfo(_options.ServerUrl, _reconnectAttempts);
+        int maxAttempts = _options.Reconnection?.MaxAttempts ?? 1;
+        _logger.ConnectingToWebSocketInfo(_options.ServerUrl, _reconnectAttempts, maxAttempts);
 
         try
         {
             await _clientWebSocket.ConnectAsync(new Uri(_options.ServerUrl), connectionTimeoutCts.Token).ConfigureAwait(false);
 
             _connectionState = WebSocketConnectionState.Connected;
-            _logger.ConnectedToWebSocketInfo(_options.ServerUrl, _reconnectAttempts);
+            _logger.ConnectedToWebSocketInfo(_options.ServerUrl, _reconnectAttempts, maxAttempts);
             _reconnectAttempts = 0;
 
             await _eventDispatcher.DispatchEventAsync(new OnWebSocketConnected(), cancellationToken).ConfigureAwait(false);
@@ -733,9 +734,9 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 130,
         Level = LogLevel.Error,
-        Message = "Reconnection failed for WebSocket at {SocketUrl} on attempt {ReconnectAttempts} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
+        Message = "Reconnection failed for WebSocket at {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void ReconnectFailedException(
-        this ILogger logger, string socketUrl, int reconnectAttempts, string message, string? innerException, string? stackTrace);
+        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, string message, string? innerException, string? stackTrace);
 
     [LoggerMessage(
         EventId = 140,
@@ -775,16 +776,16 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 190,
         Level = LogLevel.Information,
-        Message = "Connecting to WebSocket at {SocketUrl} after {ReconnectAttempts} retries")]
+        Message = "Connecting to WebSocket at {SocketUrl} (attempt {ReconnectAttempts} of {MaxAttempts})")]
     public static partial void ConnectingToWebSocketInfo(
-        this ILogger logger, string socketUrl, int reconnectAttempts);
+        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
         EventId = 200,
         Level = LogLevel.Information,
-        Message = "Connected to WebSocket at {SocketUrl} after {ReconnectAttempts} retries")]
+        Message = "Connected to WebSocket at {SocketUrl} (attempt {ReconnectAttempts} of {MaxAttempts})")]
     public static partial void ConnectedToWebSocketInfo(
-        this ILogger logger, string socketUrl, int reconnectAttempts);
+        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
         EventId = 210,
