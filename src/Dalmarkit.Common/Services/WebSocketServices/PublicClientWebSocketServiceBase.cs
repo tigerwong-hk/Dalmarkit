@@ -102,6 +102,11 @@ public abstract class PublicClientWebSocketServiceBase(
         await _webSocketClient.DisconnectAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public virtual async Task SendMessageAsync<TMessage>(TMessage message, CancellationToken cancellationToken = default)
+    {
+        await _webSocketClient.SendMessageAsync(message, cancellationToken);
+    }
+
     public virtual async Task SubscribeChannelsAsync(List<string> channels, CancellationToken cancellationToken = default)
     {
         List<string> newlyAddedChannels = [];
