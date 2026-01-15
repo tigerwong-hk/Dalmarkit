@@ -51,7 +51,15 @@ public abstract class PublicClientWebSocketServiceBase(
         string? id = (string?)messageJson["id"];
         if (!string.IsNullOrWhiteSpace(id))
         {
-            await ProcessResponseAsync(notification.Message, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await ProcessServerResponseAsync(id, notification.Message, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.ProcessServerResponseException(notification.Message, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            }
+
             return;
         }
 
@@ -62,14 +70,13 @@ public abstract class PublicClientWebSocketServiceBase(
             return;
         }
 
-        switch (method.ToLowerInvariant())
+        try
         {
-            case "heartbeat":
-                await ProcessServerHeartbeatMessageAsync(notification.Message, cancellationToken).ConfigureAwait(false);
-                break;
-            default:
-                _logger.MethodUnknownWarning(notification.Message);
-                break;
+            await ProcessServerNotificationAsync(method, notification.Message, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.ProcessServerNotificationException(notification.Message, ex.Message, ex.InnerException?.Message, ex.StackTrace);
         }
     }
 
@@ -157,11 +164,11 @@ public abstract class PublicClientWebSocketServiceBase(
         }
     }
 
-    protected virtual async Task ProcessResponseAsync(string message, CancellationToken cancellationToken = default)
+    protected virtual async Task ProcessServerNotificationAsync(string method, string message, CancellationToken cancellationToken = default)
     {
     }
 
-    protected virtual async Task ProcessServerHeartbeatMessageAsync(string message, CancellationToken cancellationToken = default)
+    protected virtual async Task ProcessServerResponseAsync(string id, string message, CancellationToken cancellationToken = default)
     {
     }
 
@@ -211,40 +218,54 @@ public static partial class PublicClientWebSocketServiceBaseLogs
     [LoggerMessage(
         EventId = 50,
         Level = LogLevel.Error,
+        Message = "Process server response exception for `{TextMessage}` with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void ProcessServerResponseException(
+        this ILogger logger, string textMessage, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 60,
+        Level = LogLevel.Error,
+        Message = "Process server notification exception for `{TextMessage}` with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void ProcessServerNotificationException(
+        this ILogger logger, string textMessage, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 70,
+        Level = LogLevel.Error,
         Message = "Method null error: {TextMessage}")]
     public static partial void MethodNullError(
         this ILogger logger, string textMessage);
 
     [LoggerMessage(
-        EventId = 60,
+        EventId = 80,
         Level = LogLevel.Warning,
         Message = "Method unknown: {TextMessage}")]
     public static partial void MethodUnknownWarning(
         this ILogger logger, string textMessage);
 
     [LoggerMessage(
-        EventId = 70,
+        EventId = 90,
         Level = LogLevel.Information,
         Message = "Subscribing to channels: {Channels}")]
     public static partial void SubscribingChannels(
         this ILogger logger, List<string> channels);
 
     [LoggerMessage(
-        EventId = 80,
+        EventId = 100,
         Level = LogLevel.Error,
         Message = "Subscribe {Channels} on connected exception with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void SubscribeOnConnectedException(
         this ILogger logger, List<string> channels, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
-        EventId = 90,
+        EventId = 110,
         Level = LogLevel.Error,
         Message = "Subscribe {Channels} exception with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void SubscribeChannelsException(
         this ILogger logger, List<string> channels, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
-        EventId = 100,
+        EventId = 120,
         Level = LogLevel.Error,
         Message = "Unsubscribe {Channels} exception with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void UnsubscribeChannelsException(
