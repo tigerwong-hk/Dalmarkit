@@ -1,7 +1,11 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading.Channels;
+using Dalmarkit.Common.Dtos.RequestDtos;
 using Dalmarkit.Common.Events;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -12,7 +16,10 @@ namespace Dalmarkit.Common.Services.WebSocketServices;
 
 public class WebSocketClient : IWebSocketClient
 {
+    public const int PendingRequestsInitialCapacity = 8209;
+
     private readonly IEventDispatcher _eventDispatcher;
+    private readonly ConcurrentDictionary<object, TaskCompletionSource<string>> _pendingRequests = new(Environment.ProcessorCount, PendingRequestsInitialCapacity);
     private readonly WebSocketClientOptions _options;
     private readonly ILogger<WebSocketClient> _logger;
 
@@ -20,6 +27,9 @@ public class WebSocketClient : IWebSocketClient
 
     private readonly SemaphoreSlim _connectionSemaphore = new(1, 1);
     private readonly SemaphoreSlim _sendSemaphore = new(1, 1);
+
+    private readonly Channel<WebSocketReceivedMessage<ReadOnlyMemory<byte>>> _receiveBinaryChannel;
+    private readonly Channel<WebSocketReceivedMessage<string>> _receiveTextChannel;
 
     private CancellationTokenSource? _checkHealthCts;
     private CancellationTokenSource? _receiveMessageCts;
@@ -38,7 +48,10 @@ public class WebSocketClient : IWebSocketClient
     public bool IsConnected => _clientWebSocket?.State == WebSocketState.Open;
     public bool HasReachedMaxReconnectAttempts => _reconnectAttempts >= (_options.Reconnection?.MaxAttempts ?? 0);
 
-    public WebSocketConnectionState State => _connectionState;
+    public ChannelReader<WebSocketReceivedMessage<ReadOnlyMemory<byte>>> BinaryMessageReader => _receiveBinaryChannel.Reader;
+    public ChannelReader<WebSocketReceivedMessage<string>> TextMessageReader => _receiveTextChannel.Reader;
+
+    public WebSocketConnectionState ConnectionState => _connectionState;
 
     public static readonly JsonSerializerOptions JsonWebOptions = new(JsonSerializerDefaults.Web);
 
@@ -47,10 +60,29 @@ public class WebSocketClient : IWebSocketClient
         IOptions<WebSocketClientOptions> options,
         ILogger<WebSocketClient> logger)
     {
-        _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _options.Validate();
+
+        _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
+        _receiveBinaryChannel = Channel.CreateBounded(
+            new BoundedChannelOptions(_options.ReceiveBinaryChannelCapacity)
+            {
+                FullMode = BoundedChannelFullMode.DropWrite,
+                SingleReader = false,
+                SingleWriter = true,
+                AllowSynchronousContinuations = false
+            },
+            void (WebSocketReceivedMessage<ReadOnlyMemory<byte>> dropped) => _logger.ReceivedBinaryMessageDroppedWarning(_options.ServerUrl, dropped.ReceivedAt));
+        _receiveTextChannel = Channel.CreateBounded(
+            new BoundedChannelOptions(_options.ReceiveTextChannelCapacity)
+            {
+                FullMode = BoundedChannelFullMode.DropWrite,
+                SingleReader = false,
+                SingleWriter = true,
+                AllowSynchronousContinuations = false
+            },
+            void (WebSocketReceivedMessage<string> dropped) => _logger.ReceivedTextMessageDroppedWarning(_options.ServerUrl, dropped.ReceivedAt, dropped.Data));
     }
 
     public void Dispose()
@@ -79,6 +111,9 @@ public class WebSocketClient : IWebSocketClient
         _receiveMessageCts?.Dispose();
         _receiveMessageCts = null;
 
+        _ = _receiveBinaryChannel.Writer.TryComplete();
+        _ = _receiveTextChannel.Writer.TryComplete();
+
         _checkHealthTask = null;
         _receiveMessageTask = null;
 
@@ -106,6 +141,16 @@ public class WebSocketClient : IWebSocketClient
 
             _connectionState = WebSocketConnectionState.Connecting;
         }
+        catch (OperationCanceledException)
+        {
+            _logger.WaitToConnectCanceledInfo(_options.ServerUrl);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.WaitToConnectException(_options.ServerUrl, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            throw;
+        }
         finally
         {
             _ = _connectionSemaphore.Release();
@@ -130,56 +175,30 @@ public class WebSocketClient : IWebSocketClient
         await DisconnectInternalAsync(WebSocketCloseStatus.NormalClosure, "User initiated", true, true, cancellationToken).ConfigureAwait(false);
     }
 
-    public virtual async Task SendMessageAsync<T>(T message, CancellationToken cancellationToken = default)
+    public async Task SendJsonRpc2NotificationAsync<TMessage>(TMessage messageObject, CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        await SendTextMessageAsync(messageObject, cancellationToken).ConfigureAwait(false);
+    }
 
-        if (!IsConnected)
-        {
-            _logger.SendWebSocketNotConnectedInfo(_options.ServerUrl);
-            throw new InvalidOperationException("WebSocket is not connected");
-        }
-
-        string json;
-        byte[] bytes;
+    public async Task<TResponse?> SendJsonRpc2RequestAsync<TParams, TResponse>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
+        where TResponse : class
+    {
+        string responseJson = await SendAndWaitForJsonRpc2Response(request, cancellationToken).ConfigureAwait(false);
 
         try
         {
-            json = JsonSerializer.Serialize(message, JsonWebOptions);
-            bytes = Encoding.UTF8.GetBytes(json);
-        }
-        catch (Exception ex)
-        {
-            _logger.SerializationUnexpectedException(_options.ServerUrl, ex.Message, ex.InnerException?.Message, ex.StackTrace);
-            throw;
-        }
-
-        _logger.SendingMessageDebug(_options.ServerUrl, json);
-
-        await _sendSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-        try
-        {
-            using CancellationTokenSource requestTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            if (_options.RequestTimeoutMilliseconds > 0)
+            TResponse? response = JsonSerializer.Deserialize<TResponse>(responseJson, JsonWebOptions);
+            if (response == null)
             {
-                requestTimeoutCts.CancelAfter(_options.RequestTimeoutMilliseconds);
+                _logger.JsonRpc2ResponseDeserializationError(_options.ServerUrl, request.Id, request.Method, responseJson);
             }
-            await _clientWebSocket!.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, requestTimeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (WebSocketException ex)
-        {
-            _logger.SendWebSocketException(_options.ServerUrl, ex.Message, ex.InnerException?.Message, ex.StackTrace);
-            throw;
+
+            return response;
         }
         catch (Exception ex)
         {
-            _logger.SendUnexpectedException(_options.ServerUrl, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            _logger.JsonRpc2ResponseDeserializationException(_options.ServerUrl, request.Id, request.Method, responseJson, ex.Message, ex.InnerException?.Message, ex.StackTrace);
             throw;
-        }
-        finally
-        {
-            _ = _sendSemaphore.Release();
         }
     }
 
@@ -209,7 +228,7 @@ public class WebSocketClient : IWebSocketClient
         {
             _logger.ReconnectSemaphoreCanceledInfo(_options.ServerUrl);
             await _eventDispatcher.DispatchEventAsync(new OnReconnectCanceled(), CancellationToken.None).ConfigureAwait(false);
-            return;
+            throw;
         }
         catch (Exception ex)
         {
@@ -238,7 +257,7 @@ public class WebSocketClient : IWebSocketClient
                 _connectionState = WebSocketConnectionState.Disconnected;
                 _logger.ReconnectCanceledInfo(_options.ServerUrl);
                 await _eventDispatcher.DispatchEventAsync(new OnReconnectCanceled(), CancellationToken.None).ConfigureAwait(false);
-                return;
+                throw;
             }
             catch (Exception ex)
             {
@@ -290,6 +309,7 @@ public class WebSocketClient : IWebSocketClient
         {
             _logger.HealthCheckCanceledExceptionInfo(_options.ServerUrl);
             await _eventDispatcher.DispatchEventAsync(new OnHealthCheckCanceled(), CancellationToken.None).ConfigureAwait(false);
+            throw;
         }
         catch (Exception ex)
         {
@@ -327,8 +347,6 @@ public class WebSocketClient : IWebSocketClient
             _connectionState = WebSocketConnectionState.Connected;
             _logger.ConnectedToWebSocketInfo(_options.ServerUrl, _reconnectAttempts, maxAttempts);
             _reconnectAttempts = 0;
-
-            await _eventDispatcher.DispatchEventAsync(new OnWebSocketConnected(), cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -340,7 +358,6 @@ public class WebSocketClient : IWebSocketClient
             _logger.ConnectFailedException(_options.ServerUrl, ex.Message, ex.InnerException?.Message, ex.StackTrace);
             throw;
         }
-
 
         if (_options.HealthCheck != null)
         {
@@ -355,6 +372,8 @@ public class WebSocketClient : IWebSocketClient
         _receiveMessageCts = CancellationTokenSource.CreateLinkedTokenSource(_disposalCts.Token);
 
         _receiveMessageTask = ReceiveMessagesAsync(_receiveMessageCts.Token);
+
+        await _eventDispatcher.DispatchEventAsync(new OnWebSocketConnected(), cancellationToken).ConfigureAwait(false);
     }
 
     protected virtual async Task DisconnectInternalAsync(WebSocketCloseStatus closeStatus, string? statusDescription, bool shutdownCheckHealthTask, bool shutdownReceiveMessageTask, CancellationToken cancellationToken = default)
@@ -459,7 +478,7 @@ public class WebSocketClient : IWebSocketClient
         catch (OperationCanceledException)
         {
             _logger.HandleDisconnectSemaphoreCanceledInfo(_options.ServerUrl);
-            return;
+            throw;
         }
         finally
         {
@@ -479,6 +498,34 @@ public class WebSocketClient : IWebSocketClient
         }
     }
 
+    protected virtual void ProcessJsonRpc2Response(string requestId, string textResponse)
+    {
+        if (string.IsNullOrWhiteSpace(requestId))
+        {
+            _logger.JsonRpc2ResponseIdMissingError(_options.ServerUrl, textResponse);
+            return;
+        }
+
+        bool isFound = _pendingRequests.TryRemove(requestId, out TaskCompletionSource<string>? tcs);
+        if (!isFound)
+        {
+            _logger.PendingRequestNotFoundWarning(_options.ServerUrl, requestId, textResponse);
+            return;
+        }
+
+        if (tcs == null)
+        {
+            _logger.PendingRequestNullWarning(_options.ServerUrl, requestId, textResponse);
+            return;
+        }
+
+        bool isSuccessful = tcs.TrySetResult(textResponse);
+        if (!isSuccessful)
+        {
+            _logger.JsonRpc2ResponseReturnError(_options.ServerUrl, requestId, textResponse);
+        }
+    }
+
     protected virtual async Task ProcessReceivedMessageAsync(WebSocketMessageType messageType, byte[] fullMessage, CancellationToken cancellationToken = default)
     {
         _logger.ReceivedMessageDebug(messageType.ToString(), _options.ServerUrl, fullMessage.Length);
@@ -488,11 +535,92 @@ public class WebSocketClient : IWebSocketClient
             if (messageType == WebSocketMessageType.Text)
             {
                 string textMessage = Encoding.UTF8.GetString(fullMessage);
-                await _eventDispatcher.DispatchEventAsync(new OnTextMessageReceived(textMessage), cancellationToken).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(textMessage))
+                {
+                    _logger.NullOrWhitespaceMessageReceivedError(_options.ServerUrl);
+                    return;
+                }
+
+                JsonNode? messageJson;
+                try
+                {
+                    messageJson = JsonNode.Parse(textMessage);
+                }
+                catch (Exception ex)
+                {
+                    _logger.ParseTextMessageReceivedException(_options.ServerUrl, textMessage, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                    return;
+                }
+
+                if (messageJson == null)
+                {
+                    _logger.ParseTextMessageReceivedError(_options.ServerUrl, textMessage);
+                    return;
+                }
+
+                string? jsonrpc = (string?)messageJson["jsonrpc"];
+                if (!string.IsNullOrWhiteSpace(jsonrpc) && jsonrpc.Equals("2.0", StringComparison.Ordinal))
+                {
+                    string? id = (string?)messageJson["id"];
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        try
+                        {
+                            ProcessJsonRpc2Response(id, textMessage);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.ProcessJsonRpc2ResponseException(_options.ServerUrl, id, textMessage, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                            await _eventDispatcher.DispatchEventAsync(new OnProcessJsonRpc2ResponseFailure(ex), cancellationToken).ConfigureAwait(false);
+                        }
+
+                        return;
+                    }
+                }
+
+                WebSocketReceivedMessage<string> channelMessage = new()
+                {
+                    Data = textMessage,
+                    ReceivedAt = DateTimeOffset.UtcNow
+                };
+
+                try
+                {
+                    await _receiveTextChannel.Writer.WriteAsync(channelMessage, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.WriteReceiveTextChannelCanceledInfo(_options.ServerUrl);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.WriteReceiveTextChannelException(_options.ServerUrl, textMessage, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                    await _eventDispatcher.DispatchEventAsync(new OnWriteReceiveTextChannelFailure(ex), cancellationToken).ConfigureAwait(false);
+                }
             }
             else if (messageType == WebSocketMessageType.Binary)
             {
-                await _eventDispatcher.DispatchEventAsync(new OnBinaryMessageReceived(fullMessage), cancellationToken).ConfigureAwait(false);
+                WebSocketReceivedMessage<ReadOnlyMemory<byte>> channelMessage = new()
+                {
+                    Data = fullMessage,
+                    ReceivedAt = DateTimeOffset.UtcNow
+                };
+
+                try
+                {
+                    await _receiveBinaryChannel.Writer.WriteAsync(channelMessage, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.WriteReceiveBinaryChannelCanceledInfo(_options.ServerUrl);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.WriteReceiveBinaryChannelException(_options.ServerUrl, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                    await _eventDispatcher.DispatchEventAsync(new OnWriteReceiveBinaryChannelFailure(ex), cancellationToken).ConfigureAwait(false);
+                }
             }
         }
         catch (Exception ex)
@@ -578,6 +706,121 @@ public class WebSocketClient : IWebSocketClient
         }
     }
 
+    protected virtual async Task<string> SendAndWaitForJsonRpc2Response<TParams>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
+    {
+        await SendTextMessageAsync(request, cancellationToken).ConfigureAwait(false);
+
+        using CancellationTokenSource responseTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (_options.ResponseTimeoutMilliseconds > 0)
+        {
+            responseTimeoutCts.CancelAfter(_options.ResponseTimeoutMilliseconds);
+        }
+
+        TaskCompletionSource<string> responseTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        bool isAdded = false;
+        try
+        {
+            isAdded = _pendingRequests.TryAdd(request.Id, responseTcs);
+        }
+        catch (Exception ex)
+        {
+            _logger.AddPendingRequestException(_options.ServerUrl, request.Id, request.Method, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+        }
+
+        if (!isAdded)
+        {
+            _logger.AddPendingRequestError(_options.ServerUrl, request.Id, request.Method);
+            throw new ArgumentException("Duplicate request id", nameof(request));
+        }
+
+        try
+        {
+            return await responseTcs.Task.WaitAsync(responseTimeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.WaitForJsonRpc2ResponseCanceledInfo(_options.ServerUrl, request.Id, request.Method);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.WaitForJsonRpc2ResponseException(_options.ServerUrl, request.Id, request.Method, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            throw;
+        }
+        finally
+        {
+            _ = _pendingRequests.TryRemove(request.Id, out _);
+        }
+    }
+
+    protected virtual async Task SendTextMessageAsync<TMessage>(TMessage messageObject, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+
+        if (!IsConnected)
+        {
+            _logger.SendTextMessageWebSocketNotConnectedInfo(_options.ServerUrl);
+            throw new InvalidOperationException("WebSocket is not connected");
+        }
+
+        string messageJson;
+        byte[] messageBytes;
+
+        try
+        {
+            messageJson = JsonSerializer.Serialize(messageObject, JsonWebOptions);
+            messageBytes = Encoding.UTF8.GetBytes(messageJson);
+        }
+        catch (Exception ex)
+        {
+            _logger.SendTextMessageSerializationException(_options.ServerUrl, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            throw;
+        }
+
+        _logger.SendingTextMessageDebug(_options.ServerUrl, messageJson);
+
+        try
+        {
+            await _sendSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.WaitToSendTextMessageCanceledInfo(_options.ServerUrl, messageJson);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.WaitToSendTextMessageException(_options.ServerUrl, messageJson, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            throw;
+        }
+
+        using CancellationTokenSource requestTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (_options.RequestTimeoutMilliseconds > 0)
+        {
+            requestTimeoutCts.CancelAfter(_options.RequestTimeoutMilliseconds);
+        }
+
+        try
+        {
+            await _clientWebSocket!.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, requestTimeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.SendTextMessageCanceledInfo(_options.ServerUrl, messageJson);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.SendTextMessageException(_options.ServerUrl, messageJson, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            throw;
+        }
+        finally
+        {
+            _ = _sendSemaphore.Release();
+        }
+    }
+
     protected virtual async Task ShutdownCheckHealthTaskAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -649,316 +892,484 @@ public static partial class WebSocketClientLogs
 {
     [LoggerMessage(
         EventId = 10,
+        Level = LogLevel.Warning,
+        Message = "Received binary message dropped at WebSocket {SocketUrl}: {ReceivedAt}")]
+    public static partial void ReceivedBinaryMessageDroppedWarning(
+        this ILogger logger, string socketUrl, DateTimeOffset receivedAt);
+
+    [LoggerMessage(
+        EventId = 20,
+        Level = LogLevel.Warning,
+        Message = "Received text message dropped at WebSocket {SocketUrl}: {ReceivedAt} {ReceivedData}")]
+    public static partial void ReceivedTextMessageDroppedWarning(
+        this ILogger logger, string socketUrl, DateTimeOffset receivedAt, string receivedData);
+
+    [LoggerMessage(
+        EventId = 30,
         Level = LogLevel.Information,
-        Message = "Connect not disconnected WebSocket at {SocketUrl}")]
+        Message = "Connect not disconnected at WebSocket {SocketUrl}")]
     public static partial void ConnectNotDisconnectedWebSocketInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 20,
-        Level = LogLevel.Information,
-        Message = "Send WebSocket at {SocketUrl} is not connected")]
-    public static partial void SendWebSocketNotConnectedInfo(
-        this ILogger logger, string socketUrl);
-
-    [LoggerMessage(
-        EventId = 30,
-        Level = LogLevel.Error,
-        Message = "Serialization unexpected exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void SerializationUnexpectedException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
-
-    [LoggerMessage(
         EventId = 40,
-        Level = LogLevel.Debug,
-        Message = "Sending message for WebSocket at {SocketUrl}: {Message}")]
-    public static partial void SendingMessageDebug(
-        this ILogger logger, string socketUrl, string message);
+        Level = LogLevel.Information,
+        Message = "Wait to connect canceled at WebSocket {SocketUrl}")]
+    public static partial void WaitToConnectCanceledInfo(
+        this ILogger logger, string socketUrl);
 
     [LoggerMessage(
         EventId = 50,
         Level = LogLevel.Error,
-        Message = "Send WebSocket exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void SendWebSocketException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        Message = "Wait to connect exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void WaitToConnectException(
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
         EventId = 60,
         Level = LogLevel.Error,
-        Message = "Send unexpected exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void SendUnexpectedException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        Message = "JSON-RPC 2.0 response deserialization error at WebSocket {SocketUrl} (RequestId: {RequestId} and Method: {Method}): {Response}")]
+    public static partial void JsonRpc2ResponseDeserializationError(
+        this ILogger logger, string socketUrl, string requestId, string method, string response);
 
     [LoggerMessage(
         EventId = 70,
-        Level = LogLevel.Information,
-        Message = "Not reconnecting as no reconnection settings for WebSocket at {SocketUrl}")]
-    public static partial void NoReconnectionSettingsInfo(
-        this ILogger logger, string socketUrl);
+        Level = LogLevel.Error,
+        Message = "JSON-RPC 2.0 response deserialization exception at WebSocket {SocketUrl} (RequestId: {RequestId}, Method: {Method} and Response: {Response}) with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void JsonRpc2ResponseDeserializationException(
+        this ILogger logger, string socketUrl, string requestId, string method, string response, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
         EventId = 80,
         Level = LogLevel.Information,
-        Message = "Reconnect not disconnected WebSocket at {SocketUrl}")]
-    public static partial void ReconnectNotDisconnectedWebSocketInfo(
+        Message = "Not reconnecting as no reconnection settings at WebSocket {SocketUrl}")]
+    public static partial void NoReconnectionSettingsInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
         EventId = 90,
         Level = LogLevel.Information,
-        Message = "Reconnect semaphore canceled for WebSocket at {SocketUrl}")]
-    public static partial void ReconnectSemaphoreCanceledInfo(
+        Message = "Reconnect not disconnected at WebSocket {SocketUrl}")]
+    public static partial void ReconnectNotDisconnectedWebSocketInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
         EventId = 100,
-        Level = LogLevel.Error,
-        Message = "Reconnect semaphore exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void ReconnectSemaphoreException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        Level = LogLevel.Information,
+        Message = "Reconnect semaphore canceled at WebSocket {SocketUrl}")]
+    public static partial void ReconnectSemaphoreCanceledInfo(
+        this ILogger logger, string socketUrl);
 
     [LoggerMessage(
         EventId = 110,
+        Level = LogLevel.Error,
+        Message = "Reconnect semaphore exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void ReconnectSemaphoreException(
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 120,
         Level = LogLevel.Information,
         Message = "Reconnecting WebSocket at {SocketUrl} in {DelayMilliseconds} ms (attempt {ReconnectAttempts} of {MaxAttempts})")]
     public static partial void ReconnectingWebSocketDelayInfo(
         this ILogger logger, string socketUrl, int delayMilliseconds, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 120,
+        EventId = 130,
         Level = LogLevel.Information,
-        Message = "Reconnection canceled for WebSocket at {SocketUrl}")]
+        Message = "Reconnection canceled at WebSocket {SocketUrl}")]
     public static partial void ReconnectCanceledInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 130,
-        Level = LogLevel.Error,
-        Message = "Reconnection failed for WebSocket at {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void ReconnectFailedException(
-        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, string message, string? innerException, string? stackTrace);
-
-    [LoggerMessage(
         EventId = 140,
         Level = LogLevel.Error,
-        Message = "Max reconnection attempts reached for WebSocket at {SocketUrl}: {ReconnectAttempts}")]
+        Message = "Reconnection failed at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void ReconnectFailedException(
+        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 150,
+        Level = LogLevel.Error,
+        Message = "Max reconnection attempts reached at WebSocket {SocketUrl}: {ReconnectAttempts}")]
     public static partial void MaxReconnectionAttemptsReachedError(
         this ILogger logger, string socketUrl, int reconnectAttempts);
 
     [LoggerMessage(
-        EventId = 150,
+        EventId = 160,
         Level = LogLevel.Warning,
-        Message = "No server heartbeat received for WebSocket at {SocketUrl} since {LastReceivedUtcDateTime}")]
+        Message = "No server heartbeat received at WebSocket {SocketUrl} since {LastReceivedUtcDateTime}")]
     public static partial void NoServerHeartbeatWarning(
         this ILogger logger, string socketUrl, string lastReceivedUtcDateTime);
 
     [LoggerMessage(
-        EventId = 160,
+        EventId = 170,
         Level = LogLevel.Information,
-        Message = "Health check canceled for WebSocket at {SocketUrl}")]
+        Message = "Health check canceled at WebSocket {SocketUrl}")]
     public static partial void HealthCheckCanceledInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 170,
+        EventId = 180,
         Level = LogLevel.Information,
-        Message = "Health check canceled exception for WebSocket at {SocketUrl}")]
+        Message = "Health check canceled exception at WebSocket {SocketUrl}")]
     public static partial void HealthCheckCanceledExceptionInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 180,
+        EventId = 190,
         Level = LogLevel.Error,
-        Message = "Health check unexpected exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
+        Message = "Health check unexpected exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void HealthCheckUnexpectedException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
-        EventId = 190,
+        EventId = 200,
         Level = LogLevel.Information,
         Message = "Connecting to WebSocket at {SocketUrl} (attempt {ReconnectAttempts} of {MaxAttempts})")]
     public static partial void ConnectingToWebSocketInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 200,
+        EventId = 210,
         Level = LogLevel.Information,
         Message = "Connected to WebSocket at {SocketUrl} (attempt {ReconnectAttempts} of {MaxAttempts})")]
     public static partial void ConnectedToWebSocketInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 210,
+        EventId = 220,
         Level = LogLevel.Information,
-        Message = "Connect canceled for WebSocket at {SocketUrl}")]
+        Message = "Connect canceled at WebSocket {SocketUrl}")]
     public static partial void ConnectCanceledInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 220,
+        EventId = 230,
         Level = LogLevel.Error,
-        Message = "Connection failed for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
+        Message = "Connection failed at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void ConnectFailedException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
-        EventId = 230,
+        EventId = 240,
         Level = LogLevel.Error,
         Message = "Disconnect disconnecting or disconnected WebSocket at {SocketUrl}")]
     public static partial void DisconnectNotConnectedWebSocketError(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 240,
+        EventId = 250,
         Level = LogLevel.Information,
-        Message = "Disconnect semaphore canceled for WebSocket at {SocketUrl}")]
+        Message = "Disconnect semaphore canceled at WebSocket {SocketUrl}")]
     public static partial void DisconnectSemaphoreCanceledInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 250,
+        EventId = 260,
         Level = LogLevel.Error,
-        Message = "Disconnect semaphore exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
+        Message = "Disconnect semaphore exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void DisconnectSemaphoreException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
-        EventId = 260,
+        EventId = 270,
         Level = LogLevel.Information,
         Message = "Disconnecting from WebSocket at {SocketUrl}")]
     public static partial void DisconnectingFromWebSocketInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 270,
+        EventId = 280,
         Level = LogLevel.Information,
         Message = "Disconnected WebSocket at {SocketUrl}")]
     public static partial void DisconnectedFromWebSocketInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 280,
+        EventId = 290,
         Level = LogLevel.Warning,
         Message = "Disconnect unconnected WebSocket at {SocketUrl}")]
     public static partial void DisconnectUnconnectedWebSocketWarning(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 290,
+        EventId = 300,
         Level = LogLevel.Information,
-        Message = "Disconnect canceled for WebSocket at {SocketUrl}")]
+        Message = "Disconnect canceled at WebSocket {SocketUrl}")]
     public static partial void DisconnectCanceledInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
-        EventId = 300,
-        Level = LogLevel.Error,
-        Message = "Disconnection failed for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void DisconnectException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
-
-    [LoggerMessage(
         EventId = 310,
-        Level = LogLevel.Information,
-        Message = "Handle disconnect when disposed for WebSocket at {SocketUrl}")]
-    public static partial void HandleDisconnectWhenDisposedInfo(
-        this ILogger logger, string socketUrl);
+        Level = LogLevel.Error,
+        Message = "Disconnection failed at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void DisconnectException(
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
         EventId = 320,
         Level = LogLevel.Information,
-        Message = "Handle disconnect when disconnecting for WebSocket at {SocketUrl}")]
-    public static partial void HandleDisconnectWhenDisconnectingInfo(
+        Message = "Handle disconnect when disposed at WebSocket {SocketUrl}")]
+    public static partial void HandleDisconnectWhenDisposedInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
         EventId = 330,
         Level = LogLevel.Information,
-        Message = "Handle disconnect semaphore canceled for WebSocket at {SocketUrl}")]
-    public static partial void HandleDisconnectSemaphoreCanceledInfo(
+        Message = "Handle disconnect when disconnecting at WebSocket {SocketUrl}")]
+    public static partial void HandleDisconnectWhenDisconnectingInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
         EventId = 340,
-        Level = LogLevel.Debug,
-        Message = "Received {MessageType} message for WebSocket at {SocketUrl} with size of {MessageSize} bytes")]
-    public static partial void ReceivedMessageDebug(
-        this ILogger logger, string messageType, string socketUrl, long messageSize);
+        Level = LogLevel.Information,
+        Message = "Handle disconnect semaphore canceled at WebSocket {SocketUrl}")]
+    public static partial void HandleDisconnectSemaphoreCanceledInfo(
+        this ILogger logger, string socketUrl);
 
     [LoggerMessage(
         EventId = 350,
         Level = LogLevel.Error,
-        Message = "Process received {MessageType} message exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void ProcessReceiveMessageException(
-        this ILogger logger, string messageType, string socketUrl, string message, string? innerException, string? stackTrace);
+        Message = "JSON-RPC 2.0 response ID missing at WebSocket {SocketUrl}: {TextResponse}")]
+    public static partial void JsonRpc2ResponseIdMissingError(
+        this ILogger logger, string socketUrl, string textResponse);
 
     [LoggerMessage(
         EventId = 360,
         Level = LogLevel.Warning,
-        Message = "Received close message for WebSocket at {SocketUrl}")]
-    public static partial void ReceivedCloseMessageWarning(
-        this ILogger logger, string socketUrl);
+        Message = "Pending JSON-RPC 2.0 request not found at WebSocket {SocketUrl} (RequestId: {RequestId}): {TextResponse}")]
+    public static partial void PendingRequestNotFoundWarning(
+        this ILogger logger, string socketUrl, string requestId, string textResponse);
 
     [LoggerMessage(
         EventId = 370,
         Level = LogLevel.Warning,
-        Message = "Received message exceed max allowed size of {MaxAllowedByteSize} bytes for WebSocket at {SocketUrl}: {messageByteSize} bytes")]
-    public static partial void ReceivedMessageExceedsMaxAllowedSizeWarning(
-        this ILogger logger, long maxAllowedByteSize, string socketUrl, long messageByteSize);
+        Message = "Pending JSON-RPC 2.0 request null at WebSocket {SocketUrl} (RequestId: {RequestId}): {TextResponse}")]
+    public static partial void PendingRequestNullWarning(
+        this ILogger logger, string socketUrl, string requestId, string textResponse);
 
     [LoggerMessage(
         EventId = 380,
-        Level = LogLevel.Information,
-        Message = "Message receiving canceled for WebSocket at {SocketUrl}")]
-    public static partial void MessagingReceivingCanceledInfo(
-        this ILogger logger, string socketUrl);
+        Level = LogLevel.Error,
+        Message = "JSON-RPC 2.0 response return error at WebSocket {SocketUrl} (RequestId: {RequestId}): {TextResponse}")]
+    public static partial void JsonRpc2ResponseReturnError(
+        this ILogger logger, string socketUrl, string requestId, string textResponse);
 
     [LoggerMessage(
         EventId = 390,
-        Level = LogLevel.Information,
-        Message = "Message receiving canceled exception for WebSocket at {SocketUrl}")]
-    public static partial void MessagingReceivingCanceledExceptionInfo(
-        this ILogger logger, string socketUrl);
+        Level = LogLevel.Debug,
+        Message = "Received {MessageType} message at WebSocket {SocketUrl} with size of {MessageSize} bytes")]
+    public static partial void ReceivedMessageDebug(
+        this ILogger logger, string messageType, string socketUrl, long messageSize);
 
     [LoggerMessage(
         EventId = 400,
         Level = LogLevel.Error,
-        Message = "Receive WebSocket exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void ReceiveWebSocketException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        Message = "Null or whitespace message received at WebSocket {SocketUrl}")]
+    public static partial void NullOrWhitespaceMessageReceivedError(
+        this ILogger logger, string socketUrl);
 
     [LoggerMessage(
         EventId = 410,
         Level = LogLevel.Error,
-        Message = "Receive unexpected exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void ReceiveUnexpectedException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        Message = "Deserialize text message received exception at WebSocket {SocketUrl} for `{TextMessage}` with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void ParseTextMessageReceivedException(
+        this ILogger logger, string socketUrl, string textMessage, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
         EventId = 420,
-        Level = LogLevel.Information,
-        Message = "Health check task shutdown timeout for WebSocket at {SocketUrl}")]
-    public static partial void HealthCheckTaskShutdownTimeoutInfo(
-        this ILogger logger, string socketUrl);
+        Level = LogLevel.Error,
+        Message = "Deserialize text message received error at WebSocket {SocketUrl}: {TextMessage}")]
+    public static partial void ParseTextMessageReceivedError(
+        this ILogger logger, string socketUrl, string textMessage);
 
     [LoggerMessage(
         EventId = 430,
         Level = LogLevel.Error,
-        Message = "Health check task shutdown exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
-    public static partial void HealthCheckTaskShutdownException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        Message = "Process JSON-RPC 2.0 response exception at WebSocket {SocketUrl} (RequestId: {id} and Message: {TextMessage}) with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void ProcessJsonRpc2ResponseException(
+        this ILogger logger, string socketUrl, string id, string textMessage, string exceptionMessage, string? innerException, string? stackTrace);
 
     [LoggerMessage(
         EventId = 440,
         Level = LogLevel.Information,
-        Message = "Receive message task shutdown timeout for WebSocket at {SocketUrl}")]
-    public static partial void ReceiveMessageTaskShutdownTimeoutInfo(
+        Message = "Write receive text channel canceled at WebSocket {SocketUrl}")]
+    public static partial void WriteReceiveTextChannelCanceledInfo(
         this ILogger logger, string socketUrl);
 
     [LoggerMessage(
         EventId = 450,
         Level = LogLevel.Error,
-        Message = "Receive message task shutdown exception for WebSocket at {SocketUrl} with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
+        Message = "Write receive text channel exception at WebSocket {SocketUrl} (Message: {TextMessage}) with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void WriteReceiveTextChannelException(
+        this ILogger logger, string socketUrl, string textMessage, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 460,
+        Level = LogLevel.Information,
+        Message = "Write receive binary channel canceled at WebSocket {SocketUrl}")]
+    public static partial void WriteReceiveBinaryChannelCanceledInfo(
+        this ILogger logger, string socketUrl);
+
+    [LoggerMessage(
+        EventId = 470,
+        Level = LogLevel.Error,
+        Message = "Write receive binary channel exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void WriteReceiveBinaryChannelException(
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 480,
+        Level = LogLevel.Error,
+        Message = "Process received {MessageType} message exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void ProcessReceiveMessageException(
+        this ILogger logger, string messageType, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 490,
+        Level = LogLevel.Warning,
+        Message = "Received close message at WebSocket {SocketUrl}")]
+    public static partial void ReceivedCloseMessageWarning(
+        this ILogger logger, string socketUrl);
+
+    [LoggerMessage(
+        EventId = 500,
+        Level = LogLevel.Warning,
+        Message = "Received message exceed max allowed size of {MaxAllowedByteSize} bytes at WebSocket {SocketUrl}: {messageByteSize} bytes")]
+    public static partial void ReceivedMessageExceedsMaxAllowedSizeWarning(
+        this ILogger logger, long maxAllowedByteSize, string socketUrl, long messageByteSize);
+
+    [LoggerMessage(
+        EventId = 510,
+        Level = LogLevel.Information,
+        Message = "Message receiving canceled at WebSocket {SocketUrl}")]
+    public static partial void MessagingReceivingCanceledInfo(
+        this ILogger logger, string socketUrl);
+
+    [LoggerMessage(
+        EventId = 520,
+        Level = LogLevel.Information,
+        Message = "Message receiving canceled exception at WebSocket {SocketUrl}")]
+    public static partial void MessagingReceivingCanceledExceptionInfo(
+        this ILogger logger, string socketUrl);
+
+    [LoggerMessage(
+        EventId = 530,
+        Level = LogLevel.Error,
+        Message = "Receive WebSocket exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void ReceiveWebSocketException(
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 540,
+        Level = LogLevel.Error,
+        Message = "Receive unexpected exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void ReceiveUnexpectedException(
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 550,
+        Level = LogLevel.Error,
+        Message = "Add pending request exception at WebSocket {SocketUrl} (RequestId: {RequestId} and Method: {Method}) with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void AddPendingRequestException(
+        this ILogger logger, string socketUrl, string requestId, string method, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 560,
+        Level = LogLevel.Error,
+        Message = "Add pending request error at WebSocket {SocketUrl} (RequestId: {RequestId} and Method: {Method})")]
+    public static partial void AddPendingRequestError(
+        this ILogger logger, string socketUrl, string requestId, string method);
+
+    [LoggerMessage(
+        EventId = 570,
+        Level = LogLevel.Information,
+        Message = "Wait for JSON-RPC 2.0 response canceled at WebSocket {SocketUrl} (RequestId: {RequestId} and Method: {Method})")]
+    public static partial void WaitForJsonRpc2ResponseCanceledInfo(
+        this ILogger logger, string socketUrl, string requestId, string method);
+
+    [LoggerMessage(
+        EventId = 580,
+        Level = LogLevel.Error,
+        Message = "Wait for JSON-RPC 2.0 response exception at WebSocket {SocketUrl} (RequestId: {RequestId} and Method: {Method}) with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void WaitForJsonRpc2ResponseException(
+        this ILogger logger, string socketUrl, string requestId, string method, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 590,
+        Level = LogLevel.Information,
+        Message = "Send WebSocket at {SocketUrl} is not connected")]
+    public static partial void SendTextMessageWebSocketNotConnectedInfo(
+        this ILogger logger, string socketUrl);
+
+    [LoggerMessage(
+        EventId = 600,
+        Level = LogLevel.Error,
+        Message = "Serialization unexpected exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void SendTextMessageSerializationException(
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 610,
+        Level = LogLevel.Debug,
+        Message = "Sending message at WebSocket {SocketUrl}: {TextMessage}")]
+    public static partial void SendingTextMessageDebug(
+        this ILogger logger, string socketUrl, string textMessage);
+
+    [LoggerMessage(
+        EventId = 620,
+        Level = LogLevel.Information,
+        Message = "Wait to send message canceled at WebSocket {SocketUrl}: {TextMessage}")]
+    public static partial void WaitToSendTextMessageCanceledInfo(
+        this ILogger logger, string socketUrl, string textMessage);
+
+    [LoggerMessage(
+        EventId = 630,
+        Level = LogLevel.Error,
+        Message = "Wait to send message exception at WebSocket {SocketUrl} for `{TextMessage}` with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void WaitToSendTextMessageException(
+        this ILogger logger, string socketUrl, string textMessage, string exceptionMEssage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 640,
+        Level = LogLevel.Information,
+        Message = "Send message canceled at WebSocket {SocketUrl}: {TextMessage}")]
+    public static partial void SendTextMessageCanceledInfo(
+        this ILogger logger, string socketUrl, string textMessage);
+
+    [LoggerMessage(
+        EventId = 650,
+        Level = LogLevel.Error,
+        Message = "Send exception at WebSocket {SocketUrl} for `{TextMessage}` with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void SendTextMessageException(
+        this ILogger logger, string socketUrl, string textMessage, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 660,
+        Level = LogLevel.Information,
+        Message = "Health check task shutdown timeout at WebSocket {SocketUrl}")]
+    public static partial void HealthCheckTaskShutdownTimeoutInfo(
+        this ILogger logger, string socketUrl);
+
+    [LoggerMessage(
+        EventId = 670,
+        Level = LogLevel.Error,
+        Message = "Health check task shutdown exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+    public static partial void HealthCheckTaskShutdownException(
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 680,
+        Level = LogLevel.Information,
+        Message = "Receive message task shutdown timeout at WebSocket {SocketUrl}")]
+    public static partial void ReceiveMessageTaskShutdownTimeoutInfo(
+        this ILogger logger, string socketUrl);
+
+    [LoggerMessage(
+        EventId = 690,
+        Level = LogLevel.Error,
+        Message = "Receive message task shutdown exception at WebSocket {SocketUrl} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void ReceiveMessageTaskShutdownException(
-        this ILogger logger, string socketUrl, string message, string? innerException, string? stackTrace);
+        this ILogger logger, string socketUrl, string exceptionMessage, string? innerException, string? stackTrace);
 }
