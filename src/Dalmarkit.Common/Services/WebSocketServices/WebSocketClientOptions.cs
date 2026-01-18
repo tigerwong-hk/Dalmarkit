@@ -11,8 +11,11 @@ public class WebSocketClientOptions
     public int KeepAliveTimeoutMilliseconds { get; set; }
     public long MaxMessageByteSize { get; set; } = 1024 * 1024;
     public int ReceiveBufferByteSize { get; set; } = 1024 * 8;
+    public int ReceiveBinaryChannelCapacity { get; set; } = 8192;
+    public int ReceiveTextChannelCapacity { get; set; } = 8192;
     public ReconnectionPolicy? Reconnection { get; set; }
     public int RequestTimeoutMilliseconds { get; set; } = 10000;
+    public int ResponseTimeoutMilliseconds { get; set; } = 30000;
     public string ServerUrl { get; set; } = string.Empty;
 
     public void Validate()
@@ -55,6 +58,16 @@ public class WebSocketClientOptions
             throw new ArgumentException("Receive buffer size must be positive", nameof(ReceiveBufferByteSize));
         }
 
+        if (ReceiveBinaryChannelCapacity <= 0)
+        {
+            throw new ArgumentException("Receive binary channel capacity must be positive", nameof(ReceiveBinaryChannelCapacity));
+        }
+
+        if (ReceiveTextChannelCapacity <= 0)
+        {
+            throw new ArgumentException("Receive text channel capacity must be positive", nameof(ReceiveTextChannelCapacity));
+        }
+
         if (Reconnection?.DelayMilliseconds <= 0)
         {
             throw new ArgumentException("Reconnect delay must be positive", nameof(Reconnection.DelayMilliseconds));
@@ -63,6 +76,11 @@ public class WebSocketClientOptions
         if (RequestTimeoutMilliseconds < 0)
         {
             throw new ArgumentException("Request timeout must be non-negative", nameof(RequestTimeoutMilliseconds));
+        }
+
+        if (ResponseTimeoutMilliseconds < 0)
+        {
+            throw new ArgumentException("Response timeout must be non-negative", nameof(ResponseTimeoutMilliseconds));
         }
 
         _ = Guard.NotNullOrWhiteSpace(ServerUrl, nameof(ServerUrl));
