@@ -114,7 +114,10 @@ public class WebSocketClient : IWebSocketClient
         _ = _receiveBinaryChannel.Writer.TryComplete();
         _ = _receiveTextChannel.Writer.TryComplete();
 
+        _checkHealthTask?.Dispose();
         _checkHealthTask = null;
+
+        _receiveMessageTask?.Dispose();
         _receiveMessageTask = null;
 
         _clientWebSocket?.Dispose();
@@ -364,6 +367,7 @@ public class WebSocketClient : IWebSocketClient
             _checkHealthCts?.Dispose();
             _checkHealthCts = CancellationTokenSource.CreateLinkedTokenSource(_disposalCts.Token);
 
+            _checkHealthTask?.Dispose();
             _lastReceivedTimestampMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             _checkHealthTask = CheckHealthAsync(_checkHealthCts.Token);
         }
@@ -371,6 +375,7 @@ public class WebSocketClient : IWebSocketClient
         _receiveMessageCts?.Dispose();
         _receiveMessageCts = CancellationTokenSource.CreateLinkedTokenSource(_disposalCts.Token);
 
+        _receiveMessageTask?.Dispose();
         _receiveMessageTask = ReceiveMessagesAsync(_receiveMessageCts.Token);
 
         await _eventDispatcher.DispatchEventAsync(new OnWebSocketConnected(), cancellationToken).ConfigureAwait(false);
@@ -850,6 +855,8 @@ public class WebSocketClient : IWebSocketClient
         {
             _checkHealthCts?.Dispose();
             _checkHealthCts = null;
+
+            _checkHealthTask?.Dispose();
             _checkHealthTask = null;
         }
     }
@@ -883,6 +890,8 @@ public class WebSocketClient : IWebSocketClient
         {
             _receiveMessageCts?.Dispose();
             _receiveMessageCts = null;
+
+            _receiveMessageTask?.Dispose();
             _receiveMessageTask = null;
         }
     }
