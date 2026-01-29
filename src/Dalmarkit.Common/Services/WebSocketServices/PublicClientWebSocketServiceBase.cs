@@ -49,6 +49,7 @@ public abstract class PublicClientWebSocketServiceBase(
         _receiveTextMessageCts?.Dispose();
         _receiveTextMessageCts = null;
 
+        _receiveTextMessageTask?.Dispose();
         _receiveTextMessageTask = null;
 
         _disposalCts.Dispose();
@@ -63,6 +64,7 @@ public abstract class PublicClientWebSocketServiceBase(
             _receiveTextMessageCts?.Dispose();
             _receiveTextMessageCts = CancellationTokenSource.CreateLinkedTokenSource(_disposalCts.Token);
 
+            _receiveTextMessageTask?.Dispose();
             _receiveTextMessageTask = ReceiveTextMessagesAsync(_receiveTextMessageCts.Token);
 
             await SetupServerHeartbeatAsync(cancellationToken).ConfigureAwait(false);
@@ -217,6 +219,8 @@ public abstract class PublicClientWebSocketServiceBase(
         {
             _receiveTextMessageCts?.Dispose();
             _receiveTextMessageCts = null;
+
+            _receiveTextMessageTask?.Dispose();
             _receiveTextMessageTask = null;
         }
     }
