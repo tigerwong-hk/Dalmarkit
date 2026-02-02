@@ -56,7 +56,7 @@ public abstract class ApplicationCommandUploadServiceBase() : ApplicationService
             return Error<TUploadObjectDto>(ErrorTypes.ResourceNotFound, typeof(TParentEntity), inputDto.ParentId);
         }
 
-        inputDto.ObjectName = inputDto.ObjectName!.Trim();
+        inputDto.ObjectName = inputDto.ObjectName.Trim();
         TUploadObjectEntity? existingObject = await uploadObjectDataService.GetEntityByExpressionAsync(
             x => x.ObjectName == inputDto.ObjectName && !x.IsDeleted, cancellationToken);
         if (existingObject != null && existingObject.PrincipalId == inputDto.ParentId)

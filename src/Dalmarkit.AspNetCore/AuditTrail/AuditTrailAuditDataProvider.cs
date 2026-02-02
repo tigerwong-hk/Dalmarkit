@@ -7,10 +7,12 @@ using Dalmarkit.Common.AuditTrail;
 using Dalmarkit.Common.Entities.BaseEntities;
 using Dalmarkit.Common.Entities.Components;
 using Dalmarkit.Common.Errors;
+using Microsoft.EntityFrameworkCore;
 
 namespace Dalmarkit.AspNetCore.AuditTrail;
 
-public class AuditTrailAuditDataProvider(string connectionString) : AuditDataProvider
+public class AuditTrailAuditDataProvider<TDbContext>(string connectionString, DbContextOptions<TDbContext> dbContextOptions) : AuditDataProvider
+    where TDbContext : DbContext
 {
     private const string DurationMsec = nameof(LogEntityBase.DurationMsec);
     private const string LogDetail = nameof(LogEntityBase.LogDetail);
@@ -19,7 +21,7 @@ public class AuditTrailAuditDataProvider(string connectionString) : AuditDataPro
     private const string UserId = nameof(LogEntityBase.UserId);
 
     private readonly PostgreSqlDataProvider ApiLogProvider = ConfigureApiLogProvider(connectionString);
-    private readonly EntityFrameworkDataProvider AuditLogProvider = ConfigureAuditLogProvider();
+    private readonly DbContextDataProvider<TDbContext, AuditLog> AuditLogProvider = ConfigureAuditLogProvider(dbContextOptions);
 
     public override object InsertEvent(AuditEvent auditEvent)
     {
@@ -98,29 +100,31 @@ public class AuditTrailAuditDataProvider(string connectionString) : AuditDataPro
         );
     }
 
-    private static EntityFrameworkDataProvider ConfigureAuditLogProvider()
+    private static DbContextDataProvider<TDbContext, AuditLog> ConfigureAuditLogProvider(DbContextOptions<TDbContext> dbContextOptions)
     {
         return new(config => config
-            .AuditTypeMapper(_ => typeof(AuditLog))
-            .AuditEntityAction<AuditLog>((ev, entry, entity) =>
+            .UseDbContextOptions(dbContextOptions)
+            .Mapper((ev, entity) =>
             {
-                EntityFrameworkEvent efEvent = ev.GetEntityFrameworkEvent();
-                entity.Action = entry.Action;
+                EntityFrameworkEvent? efEvent = (ev as AuditEventEntityFramework)?.GetEntityFrameworkEvent();
+                EventEntry? entry = efEvent?.Entries?.FirstOrDefault();
+                entity.Action = entry?.Action ?? string.Empty;
                 entity.AuditScopeId = Guid.TryParse(GetCustomFieldValueByKeyOrDbDefault(ev, nameof(AuditLog.AuditScopeId)).ToString(),
                     out Guid auditScopeId)
                         ? auditScopeId
                         : Guid.Empty;
                 entity.ChangedValues = GetChangedValues(entry);
                 entity.DurationMsec = ev.Duration;
-                entity.Error = efEvent.ErrorMessage;
-                entity.LogDetail = entry.ToJson();
-                entity.PrimaryKey = entry.PrimaryKey.First().Value.ToString()!;
-                entity.Status = efEvent.Success;
-                entity.Table = entry.Table;
-                entity.TraceId = GetCustomFieldValueByKeyOrDbDefault(ev, TraceId).ToString()!;
+                entity.Error = efEvent?.ErrorMessage;
+                entity.LogDetail = entry?.ToJson() ?? "{}";
+                // PrimaryKey will be populated correctly during ReplaceEvent (after SaveChanges)
+                entity.PrimaryKey = entry?.PrimaryKey?.FirstOrDefault().Value?.ToString() ?? string.Empty;
+                entity.Status = efEvent?.Success ?? false;
+                entity.Table = entry?.Table ?? string.Empty;
+                entity.TraceId = GetCustomFieldValueByKeyOrDbDefault(ev, TraceId).ToString() ?? string.Empty;
                 entity.UserId = ev.Environment.UserName;
             })
-            .IgnoreMatchedProperties(true)
+            .DisposeDbContext(true)
         );
     }
 
@@ -131,9 +135,9 @@ public class AuditTrailAuditDataProvider(string connectionString) : AuditDataPro
             : DBNull.Value;
     }
 
-    private static string? GetChangedValues(EventEntry entry)
+    private static string? GetChangedValues(EventEntry? entry)
     {
-        if (entry.Changes == null || entry.Changes.Count == 0)
+        if (entry?.Changes == null || entry.Changes.Count == 0)
         {
             return null;
         }
