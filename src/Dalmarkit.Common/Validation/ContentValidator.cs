@@ -41,7 +41,9 @@ public static class ContentValidator
             return false;
         }
 
+#pragma warning disable IDE0028 // Simplify collection initialization
         HashSet<string> fileExtensionResults = new(StringComparer.InvariantCultureIgnoreCase);
+#pragma warning restore IDE0028 // Simplify collection initialization
 
         long fileExtensionMaxPoints = allResultsByFileExtension[0].Points;
         fileExtensionResults.UnionWith(
@@ -57,7 +59,9 @@ public static class ContentValidator
             return false;
         }
 
+#pragma warning disable IDE0028 // Simplify collection initialization
         HashSet<string> mimeTypeResults = new(StringComparer.InvariantCultureIgnoreCase);
+#pragma warning restore IDE0028 // Simplify collection initialization
 
         long mimeTypeMaxPoints = allResultsByMimeType[0].Points;
         mimeTypeResults.UnionWith(
