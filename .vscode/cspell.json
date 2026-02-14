@@ -17,6 +17,7 @@
         "dotnetcli",
         "dtos",
         "hasher",
+        "ipairs",
         "lightlink",
         "naptr",
         "nethereum",
@@ -26,8 +27,12 @@
         "paginators",
         "pkcs",
         "roslynator",
+        "scard",
+        "smembers",
+        "sigr",
         "softprops",
         "solana",
+        "srem",
         "webapi"
     ],
     "ignorePaths": [
