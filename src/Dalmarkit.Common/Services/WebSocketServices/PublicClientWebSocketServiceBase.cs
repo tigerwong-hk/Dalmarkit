@@ -19,15 +19,16 @@ public abstract class PublicClientWebSocketServiceBase(
     private readonly IWebSocketClient _webSocketClient = webSocketClient ?? throw new ArgumentNullException(nameof(webSocketClient));
     private readonly ILogger<PublicClientWebSocketServiceBase> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    private static readonly ConcurrentDictionary<string, string> _subscribedChannels = new(Environment.ProcessorCount, SubscribedChannelsInitialCapacity);
-    private static readonly ConcurrentDictionary<string, Channel<WebSocketReceivedMessage<string>>> _notificationMessageTypes = new(Environment.ProcessorCount, SubscribedChannelsInitialCapacity);
+    private readonly ConcurrentDictionary<string, string> _subscribedChannels = new(Environment.ProcessorCount, SubscribedChannelsInitialCapacity);
+    private readonly ConcurrentDictionary<string, Channel<WebSocketReceivedMessage<string>>> _notificationMessageTypes = new(Environment.ProcessorCount, SubscribedChannelsInitialCapacity);
 
-    private static volatile bool _hasSubscribedOnConnected;
+    private int _hasSubscribedOnConnected;
+    private bool HasSubscribedOnConnected => Volatile.Read(ref _hasSubscribedOnConnected) != 0;
 
-    private static bool _isDisposed;
-    private static readonly SemaphoreSlim _receiveSemaphore = new(1, 1);
-    private static CancellationTokenSource? _receiveTextMessageCts;
-    private static Task? _receiveTextMessageTask;
+    private bool _isDisposed;
+    private readonly SemaphoreSlim _receiveSemaphore = new(1, 1);
+    private CancellationTokenSource? _receiveTextMessageCts;
+    private Task? _receiveTextMessageTask;
 
     public void Dispose()
     {
@@ -42,7 +43,7 @@ public abstract class PublicClientWebSocketServiceBase(
             return;
         }
 
-        _ = Interlocked.Exchange(ref _isDisposed, true);
+        _isDisposed = true;
 
         if (!disposing)
         {
@@ -84,7 +85,7 @@ public abstract class PublicClientWebSocketServiceBase(
 
             await SetupServerHeartbeatAsync(cancellationToken).ConfigureAwait(false);
 
-            _ = Interlocked.Exchange(ref _hasSubscribedOnConnected, true);
+            _ = Interlocked.Exchange(ref _hasSubscribedOnConnected, 1);
 
             _logger.SubscribingChannels(channelNames);
             await SendSubscribeRequestAsync(channelNames, cancellationToken).ConfigureAwait(false);
@@ -311,7 +312,7 @@ public abstract class PublicClientWebSocketServiceBase(
             result.Add(subscriptionChannel, messageChannel);
         }
 
-        if (_hasSubscribedOnConnected && newlyAddedChannelNames.Count > 0)
+        if (HasSubscribedOnConnected && newlyAddedChannelNames.Count > 0)
         {
             try
             {
@@ -376,7 +377,7 @@ public abstract class PublicClientWebSocketServiceBase(
             }
         }
 
-        if (_hasSubscribedOnConnected && newlyRemovedChannelNames.Count > 0)
+        if (HasSubscribedOnConnected && newlyRemovedChannelNames.Count > 0)
         {
             try
             {
