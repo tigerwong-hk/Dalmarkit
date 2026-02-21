@@ -118,7 +118,10 @@ public class AwsSystemsManagerService(AmazonSimpleSystemsManagementClient system
             }
 
             nextToken = response.NextToken;
-            parameters.AddRange(response.Parameters);
+            if (response.Parameters != null)
+            {
+                parameters.AddRange(response.Parameters);
+            }
         } while (!string.IsNullOrWhiteSpace(nextToken));
 
         return ProcessParameters(parameters, path);
