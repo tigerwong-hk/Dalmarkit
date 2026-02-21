@@ -68,7 +68,7 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         }
 
         UserType user = response.User;
-        AttributeType? subAttribute = response.User.Attributes.FirstOrDefault(a => a.Name == "sub");
+        AttributeType? subAttribute = response.User.Attributes?.FirstOrDefault(a => a.Name == "sub");
         return subAttribute?.Value;
     }
 
@@ -142,7 +142,10 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         IAdminListGroupsForUserPaginator groupsPaginator = _cognitoService.Paginators.AdminListGroupsForUser(request);
         await foreach (AdminListGroupsForUserResponse? response in groupsPaginator.Responses)
         {
-            groups.AddRange(response.Groups);
+            if (response.Groups != null)
+            {
+                groups.AddRange(response.Groups);
+            }
         }
 
         return groups.Select(g => g.GroupName);
@@ -216,7 +219,10 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         IListUsersPaginator usersPaginator = _cognitoService.Paginators.ListUsers(request);
         await foreach (ListUsersResponse? response in usersPaginator.Responses)
         {
-            users.AddRange(response.Users);
+            if (response.Users != null)
+            {
+                users.AddRange(response.Users);
+            }
         }
 
         if (users.Count == 0)
@@ -250,7 +256,10 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         IListUsersPaginator usersPaginator = _cognitoService.Paginators.ListUsers(request);
         await foreach (ListUsersResponse? response in usersPaginator.Responses)
         {
-            users.AddRange(response.Users);
+            if (response.Users != null)
+            {
+                users.AddRange(response.Users);
+            }
         }
 
         if (users.Count == 0)
@@ -288,7 +297,10 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         IListUsersPaginator usersPaginator = _cognitoService.Paginators.ListUsers(request);
         await foreach (ListUsersResponse? response in usersPaginator.Responses)
         {
-            users.AddRange(response.Users);
+            if (response.Users != null)
+            {
+                users.AddRange(response.Users);
+            }
         }
 
         if (users.Count == 0)
@@ -303,7 +315,7 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
             return string.Empty;
         }
 
-        return users[0].Attributes.Find(attrType => attrType.Name == "email")?.Value;
+        return users[0].Attributes?.Find(attrType => attrType.Name == "email")?.Value;
     }
 }
 
