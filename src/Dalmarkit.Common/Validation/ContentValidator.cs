@@ -55,7 +55,7 @@ public static class ContentValidator
         bool isFileExtensionValid = fileExtensionResults.Contains(fileExtension.ToLowerInvariant());
         if (!isFileExtensionValid)
         {
-            logger.FileExtensionNotFound(string.Join(',', fileExtensionResults), fileExtension);
+            logger.FileExtensionNotFound(fileExtension);
             return false;
         }
 
@@ -76,7 +76,7 @@ public static class ContentValidator
             return true;
         }
 
-        logger.ContentTypeNotFound(string.Join(',', mimeTypeResults), contentType);
+        logger.ContentTypeNotFound(contentType);
         return false;
     }
 }
@@ -104,12 +104,12 @@ public static partial class ContentInspectorHelperLogs
     [LoggerMessage(
         EventId = 3,
         Level = LogLevel.Information,
-        Message = "File extension not found in [{FileExtensionResults}]: {FileExtension}")]
-    public static partial void FileExtensionNotFound(this ILogger logger, string fileExtensionResults, string fileExtension);
+        Message = "File extension not found: {FileExtension}")]
+    public static partial void FileExtensionNotFound(this ILogger logger, string fileExtension);
 
     [LoggerMessage(
         EventId = 4,
         Level = LogLevel.Information,
-        Message = "Content type not found in [{MimeTypeResults}]: {ContentType} ")]
-    public static partial void ContentTypeNotFound(this ILogger logger, string mimeTypeResults, string contentType);
+        Message = "Content type not found: {ContentType} ")]
+    public static partial void ContentTypeNotFound(this ILogger logger, string contentType);
 }

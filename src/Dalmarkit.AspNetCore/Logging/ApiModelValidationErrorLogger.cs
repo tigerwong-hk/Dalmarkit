@@ -13,14 +13,14 @@ public static class ApiModelValidationErrorLogger
         string loggerCategoryName = string.IsNullOrWhiteSpace(context.ActionDescriptor.DisplayName) ? context.ActionDescriptor.Id : context.ActionDescriptor.DisplayName;
         ILogger logger = loggerFactory.CreateLogger(loggerCategoryName);
 
-        // Get error messages
+        string requestUrl = context.HttpContext.Request.GetDisplayUrl();
         string errorMessages = context.ModelState.Values.Any()
             ? string.Join(" | ", context.ModelState.Values
                 .SelectMany(x => x.Errors)
                 .Select(x => x.ErrorMessage))
             : string.Empty;
 
-        logger.ModelValidationErrorsAt(context.HttpContext.Request.GetDisplayUrl(), errorMessages);
+        logger.ModelValidationErrorsAt(requestUrl, errorMessages);
     }
 }
 
