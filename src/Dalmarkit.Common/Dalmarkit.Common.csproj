@@ -12,14 +12,14 @@
 
   <ItemGroup>
     <PackageReference Include="Mediator.Abstractions" Version="3.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.1.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.3.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.3" />
     <PackageReference Include="Mime-Detective" Version="25.8.1" />
     <PackageReference Include="Roslynator.Analyzers" Version="4.15.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="StackExchange.Redis" Version="2.11.0" />
+    <PackageReference Include="StackExchange.Redis" Version="2.11.3" />
   </ItemGroup>
 
 </Project>

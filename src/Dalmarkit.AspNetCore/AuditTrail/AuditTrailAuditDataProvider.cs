@@ -86,7 +86,7 @@ public class AuditTrailAuditDataProvider<TDbContext>(string connectionString, Db
             .TableName("ApiLogs")
             .Schema("public")
             .IdColumnName(nameof(ApiLog.Id))
-            .DataColumn(LogDetail, Audit.PostgreSql.Configuration.DataType.JSONB)
+            .DataJsonColumn(LogDetail, Audit.PostgreSql.Configuration.DataType.JSONB)
             .LastUpdatedColumnName(nameof(LogEntityBase.ModifiedOn))
             .CustomColumn(DurationMsec, ev => ev.Duration)
             .CustomColumn(Status, ev => GetCustomFieldValueByKeyOrDbDefault(ev, Status))

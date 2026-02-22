@@ -9,9 +9,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Audit.EntityFramework.Core" Version="31.3.2" />
-    <PackageReference Include="Audit.NET.PostgreSql" Version="31.3.2" />
-    <PackageReference Include="Audit.WebApi.Core" Version="31.3.2" />
+    <PackageReference Include="Audit.EntityFramework.Core" Version="32.0.0" />
+    <PackageReference Include="Audit.NET.PostgreSql" Version="32.0.0" />
+    <PackageReference Include="Audit.WebApi.Core" Version="32.0.0" />
     <PackageReference Include="Roslynator.Analyzers" Version="4.15.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
