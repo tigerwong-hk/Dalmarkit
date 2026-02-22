@@ -25,7 +25,7 @@ jobs:
       - name: Build solution
         run: |
           dotnet clean -c Release
-          dotnet build -c Release --no-restore
+          dotnet build -c Release --no-restore /WarnAsError
       - name: Run unit tests
         run: dotnet test -c Release --no-build --no-restore
       - name: Pack alpha NuGet packages for develop branch
