@@ -549,7 +549,7 @@ public class WebSocketClient : IWebSocketClient
 
     protected virtual async Task ProcessReceivedMessageAsync(WebSocketMessageType messageType, byte[] fullMessage, CancellationToken cancellationToken = default)
     {
-        _logger.ReceivedMessageDebug(messageType.ToString(), _options.ServerUrl, fullMessage.Length);
+        _logger.ReceivedMessageDebug(_options.ServerUrl, fullMessage.Length);
 
         try
         {
@@ -1208,9 +1208,9 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 400,
         Level = LogLevel.Debug,
-        Message = "Received {MessageType} message at WebSocket {SocketUrl} with size of {MessageSize} bytes")]
+        Message = "Received message at WebSocket {SocketUrl} with size of {MessageSize} bytes")]
     public static partial void ReceivedMessageDebug(
-        this ILogger logger, string messageType, string socketUrl, long messageSize);
+        this ILogger logger, string socketUrl, long messageSize);
 
     [LoggerMessage(
         EventId = 410,
