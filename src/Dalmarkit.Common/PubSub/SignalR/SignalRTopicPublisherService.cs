@@ -62,9 +62,15 @@ public class SignalRTopicPublisherService(
             PublishTimestamp = DateTimeOffset.UtcNow
         };
 
-        await _hubPublisher.PublishToAll(message);
-
-        _logger.PublishToAllDebug(topic, method);
+        try
+        {
+            await _hubPublisher.PublishToAll(message);
+            _logger.PublishToAllDebug(topic, method);
+        }
+        catch (Exception ex)
+        {
+            _logger.PublishToAllException(topic, method, ex);
+        }
     }
 
     public virtual async Task PublishToSubscriberAsync<TPayload>(
@@ -101,20 +107,19 @@ public class SignalRTopicPublisherService(
             PublishTimestamp = DateTimeOffset.UtcNow
         };
 
-        await _hubPublisher.PublishToConnection(connectionId, message);
-
-        _logger.PublishToSubscriberDebug(topic, method, connectionId);
+        try
+        {
+            await _hubPublisher.PublishToConnection(connectionId, message);
+            _logger.PublishToSubscriberDebug(topic, method, connectionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.PublishToSubscriberException(topic, method, connectionId, ex);
+        }
     }
 
     public virtual async Task PublishToTopicAsync<TPayload>(string topic, string method, TPayload payload)
     {
-        IReadOnlyCollection<string> subscribers = await _subscriptionService.GetTopicSubscribersAsync(topic);
-        if (subscribers.Count == 0)
-        {
-            _logger.PublishToTopicSubscribersEmptyWarning(topic, method);
-            return;
-        }
-
         TopicMessage<TPayload> message = new()
         {
             Topic = topic,
@@ -123,9 +128,15 @@ public class SignalRTopicPublisherService(
             PublishTimestamp = DateTimeOffset.UtcNow
         };
 
-        await _hubPublisher.PublishToGroup(topic, message);
-
-        _logger.PublishToTopicDebug(topic, method, subscribers.Count);
+        try
+        {
+            await _hubPublisher.PublishToGroup(topic, message);
+            _logger.PublishToTopicDebug(topic, method);
+        }
+        catch (Exception ex)
+        {
+            _logger.PublishToTopicException(topic, method, ex);
+        }
     }
 }
 
@@ -155,49 +166,63 @@ public static partial class SignalRTopicPublisherServiceLogs
     [LoggerMessage(
         EventId = 40,
         Level = LogLevel.Error,
+        Message = "Publish to all exception for topic/method `{Topic}`/`{Method}`")]
+    public static partial void PublishToAllException(
+        this ILogger logger, string topic, string method, Exception exception);
+
+    [LoggerMessage(
+        EventId = 50,
+        Level = LogLevel.Error,
         Message = "Publish to subscriber connection ID null")]
     public static partial void PublishToSubscriberConnectionIdNull(
         this ILogger logger);
 
     [LoggerMessage(
-        EventId = 50,
+        EventId = 60,
         Level = LogLevel.Error,
         Message = "Publish to subscriber topic null for connection ID {ConnectionId}")]
     public static partial void PublishToSubscriberTopicNull(
         this ILogger logger, string connectionId);
 
     [LoggerMessage(
-        EventId = 60,
+        EventId = 70,
         Level = LogLevel.Error,
         Message = "Publish to subscriber method null for topic `{Topic}` with connection ID {ConnectionID}")]
     public static partial void PublishToSubscriberMethodNull(
         this ILogger logger, string topic, string connectionId);
 
     [LoggerMessage(
-        EventId = 70,
-        Level = LogLevel.Warning,
-        Message = "Publish to topic subscribers empty for topic/method `{Topic}`/`{Method}`")]
-    public static partial void PublishToTopicSubscribersEmptyWarning(
-        this ILogger logger, string topic, string method);
-
-    [LoggerMessage(
         EventId = 80,
-        Level = LogLevel.Debug,
-        Message = "Publish to topic for topic/method `{Topic}`/`{Method}`: {SubscribersCount} subscribers")]
-    public static partial void PublishToTopicDebug(
-        this ILogger logger, string topic, string method, int subscribersCount);
-
-    [LoggerMessage(
-        EventId = 90,
         Level = LogLevel.Error,
         Message = "Publish to subscriber but subscriber not subscribed for topic/method `{Topic}`/`{Method}`: {ConnectionId}")]
     public static partial void PublishToSubscriberNotSubscribed(
         this ILogger logger, string topic, string method, string connectionId);
 
     [LoggerMessage(
-        EventId = 100,
+        EventId = 90,
         Level = LogLevel.Debug,
         Message = "Publish to subscriber for topic/method `{Topic}`/`{Method}`: {ConnectionId}")]
     public static partial void PublishToSubscriberDebug(
         this ILogger logger, string topic, string method, string connectionId);
+
+    [LoggerMessage(
+        EventId = 100,
+        Level = LogLevel.Error,
+        Message = "Publish to subscriber exception for topic/method `{Topic}`/`{Method}`: {ConnectionId}")]
+    public static partial void PublishToSubscriberException(
+        this ILogger logger, string topic, string method, string connectionId, Exception exception);
+
+    [LoggerMessage(
+        EventId = 110,
+        Level = LogLevel.Debug,
+        Message = "Publish to topic for topic/method `{Topic}`/`{Method}`")]
+    public static partial void PublishToTopicDebug(
+        this ILogger logger, string topic, string method);
+
+    [LoggerMessage(
+        EventId = 120,
+        Level = LogLevel.Error,
+        Message = "Publish to topic subscribers empty for topic/method `{Topic}`/`{Method}`")]
+    public static partial void PublishToTopicException(
+        this ILogger logger, string topic, string method, Exception exception);
 }
