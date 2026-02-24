@@ -828,14 +828,14 @@ public class WebSocketClient : IWebSocketClient
             throw;
         }
 
-        using CancellationTokenSource requestTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (_options.RequestTimeoutMilliseconds > 0)
-        {
-            requestTimeoutCts.CancelAfter(_options.RequestTimeoutMilliseconds);
-        }
-
         try
         {
+            using CancellationTokenSource requestTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            if (_options.RequestTimeoutMilliseconds > 0)
+            {
+                requestTimeoutCts.CancelAfter(_options.RequestTimeoutMilliseconds);
+            }
+
             await _clientWebSocket!.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, requestTimeoutCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
