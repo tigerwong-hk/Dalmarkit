@@ -74,13 +74,13 @@ public static partial class BlockchainAddress
             BlockchainNetwork.Optimism or
             BlockchainNetwork.PolygonPos or
             BlockchainNetwork.PolygonZkEvm or
-            BlockchainNetwork.ZkSyncEra => EvmAddressRegex().Match(blockchainAddress).Success,
+            BlockchainNetwork.ZkSyncEra => EvmAddressRegex().IsMatch(blockchainAddress),
             BlockchainNetwork.Algorand => false,
             BlockchainNetwork.Aptos => false,
             BlockchainNetwork.Cardano => false,
-            BlockchainNetwork.Near => blockchainAddress.Length >= 2 && blockchainAddress.Length <= 64 && NearAddressRegex().Match(blockchainAddress).Success,
+            BlockchainNetwork.Near => blockchainAddress.Length >= 2 && blockchainAddress.Length <= 64 && NearAddressRegex().IsMatch(blockchainAddress),
             BlockchainNetwork.Sei => false,
-            BlockchainNetwork.Solana => SolanaAddressRegex().Match(blockchainAddress).Success,
+            BlockchainNetwork.Solana => SolanaAddressRegex().IsMatch(blockchainAddress),
             BlockchainNetwork.Sui => false,
             BlockchainNetwork.Ton => false,
             _ => false,
