@@ -1,17 +1,12 @@
+using System.Collections.Immutable;
+
 namespace Dalmarkit.Common.PubSub;
 
 public interface ITopicSubscriptionService
 {
-    string ConnectionKeyPrefix { get; }
-    string SubscriptionKey { get; }
-    string TopicKeyPrefix { get; }
-
-    Task<IReadOnlyCollection<string>> GetAllSubscribedTopics();
-    Task<IReadOnlyCollection<string>> GetSubscribedTopicsByConnectionIdAsync(string connectionId);
-    Task<IReadOnlyCollection<string>> GetSubscribedTopicsByPrefixAsync(string prefix);
-    Task<IReadOnlyCollection<string>> GetTopicSubscribersAsync(string topic);
-    Task<bool> IsTopicSubscribedAsync(string connectionId, string topic);
-    Task<IReadOnlyCollection<string>> RemoveConnectionAsync(string connectionId);
-    Task SubscribeTopicAsync(string connectionId, string topic);
-    Task UnsubscribeTopicAsync(string connectionId, string topic);
+    ImmutableHashSet<string> GetSubscriberTopics(string subscriberId);
+    ImmutableHashSet<string> GetTopicsByPrefix(string prefix);
+    ImmutableHashSet<string> RemoveSubscriber(string subscriberId, Func<string, string>? GetTopicPrefix);
+    bool SubscribeTopic(string subscriberId, string topicName, Func<string, string>? GetTopicPrefix);
+    bool UnsubscribeTopic(string subscriberId, string topicName, Func<string, string>? GetTopicPrefix);
 }
