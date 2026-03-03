@@ -39,11 +39,12 @@ public class WebSocketClient : IWebSocketClient
 
     private ClientWebSocket? _clientWebSocket;
 
-    private bool _isDisposed;
+    private volatile int _isDisposed;
     private long _lastReceivedTimestampMilliseconds;
-    private int _reconnectAttempts;
+    private volatile int _reconnectAttempts;
 
     private volatile WebSocketConnectionState _connectionState = WebSocketConnectionState.Disconnected;
+    private Func<string>? _GetWebSocketServerUrl;
 
     public bool IsConnected => _clientWebSocket?.State == WebSocketState.Open;
     public bool HasReachedMaxReconnectAttempts => _reconnectAttempts >= (_options.Reconnection?.MaxAttempts ?? 0);
@@ -93,12 +94,10 @@ public class WebSocketClient : IWebSocketClient
 
     protected virtual void Dispose(bool disposing)
     {
-        if (_isDisposed)
+        if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) != 0)
         {
             return;
         }
-
-        _isDisposed = true;
 
         if (!disposing)
         {
@@ -130,7 +129,12 @@ public class WebSocketClient : IWebSocketClient
 
     public virtual async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        await ConnectAsync(null, cancellationToken).ConfigureAwait(false);
+    }
+
+    public virtual async Task ConnectAsync(Func<string>? getWebSocketServerUrl = null, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
 
         try
         {
@@ -157,6 +161,7 @@ public class WebSocketClient : IWebSocketClient
             _ = _connectionSemaphore.Release();
         }
 
+        _GetWebSocketServerUrl = getWebSocketServerUrl;
         try
         {
             await ConnectInternalAsync(cancellationToken).ConfigureAwait(false);
@@ -170,7 +175,7 @@ public class WebSocketClient : IWebSocketClient
 
     public virtual async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
 
         await DisconnectInternalAsync(WebSocketCloseStatus.NormalClosure, "User initiated", true, true, cancellationToken).ConfigureAwait(false);
     }
@@ -250,10 +255,10 @@ public class WebSocketClient : IWebSocketClient
             _ = _connectionSemaphore.Release();
         }
 
-        while (!_isDisposed && (policy.MaxAttempts < 0 || _reconnectAttempts < policy.MaxAttempts))
+        while (_isDisposed == 0 && (policy.MaxAttempts < 0 || _reconnectAttempts < policy.MaxAttempts))
         {
-            _reconnectAttempts++;
-            _logger.ReconnectingWebSocketDelayInfo(_options.ServerUrl, policy.DelayMilliseconds, _reconnectAttempts, policy.MaxAttempts);
+            int reconnectAttempts = Interlocked.Increment(ref _reconnectAttempts);
+            _logger.ReconnectingWebSocketDelayInfo(_options.ServerUrl, policy.DelayMilliseconds, reconnectAttempts, policy.MaxAttempts);
 
             try
             {
@@ -270,8 +275,8 @@ public class WebSocketClient : IWebSocketClient
             }
             catch (Exception ex)
             {
-                _logger.ReconnectFailedException(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts, ex.Message, ex.InnerException?.Message, ex.StackTrace);
-                await _eventDispatcher.DispatchEventAsync(new OnReconnectFailure(_reconnectAttempts, ex), cancellationToken).ConfigureAwait(false);
+                _logger.ReconnectFailedException(_options.ServerUrl, reconnectAttempts, policy.MaxAttempts, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                await _eventDispatcher.DispatchEventAsync(new OnReconnectFailure(reconnectAttempts, ex), cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -288,14 +293,15 @@ public class WebSocketClient : IWebSocketClient
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(_options.HealthCheck!.IntervalMilliseconds), cancellationToken).ConfigureAwait(false);
 
-                if (_lastReceivedTimestampMilliseconds + _options.HealthCheck.TimeoutMilliseconds < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+                long lastReceivedTimestampMilliseconds = Interlocked.Read(ref _lastReceivedTimestampMilliseconds);
+                if (lastReceivedTimestampMilliseconds + _options.HealthCheck.TimeoutMilliseconds < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
                 {
                     _logger.NoServerHeartbeatWarning(
                         _options.ServerUrl,
-                        DateTimeOffset.FromUnixTimeMilliseconds(_lastReceivedTimestampMilliseconds).ToString("u")
+                        DateTimeOffset.FromUnixTimeMilliseconds(lastReceivedTimestampMilliseconds).ToString("u")
                     );
 
-                    await _eventDispatcher.DispatchEventAsync(new OnNoServerHeartbeatReceived(_lastReceivedTimestampMilliseconds), cancellationToken).ConfigureAwait(false);
+                    await _eventDispatcher.DispatchEventAsync(new OnNoServerHeartbeatReceived(lastReceivedTimestampMilliseconds), cancellationToken).ConfigureAwait(false);
 
                     try
                     {
@@ -306,7 +312,7 @@ public class WebSocketClient : IWebSocketClient
                         await _eventDispatcher.DispatchEventAsync(new OnNoServerHeartbeatDisconnectFailure(ex), cancellationToken).ConfigureAwait(false);
                     }
 
-                    using CancellationTokenSource reconnectCts = new();
+                    using CancellationTokenSource reconnectCts = CancellationTokenSource.CreateLinkedTokenSource(_disposalCts.Token);
                     await AttemptReconnectAsync(reconnectCts.Token).ConfigureAwait(false);
                     return;
                 }
@@ -352,7 +358,8 @@ public class WebSocketClient : IWebSocketClient
 
         try
         {
-            await _clientWebSocket.ConnectAsync(new Uri(_options.ServerUrl), connectionTimeoutCts.Token).ConfigureAwait(false);
+            string webSocketServerUrl = _GetWebSocketServerUrl == null ? _options.ServerUrl : _GetWebSocketServerUrl();
+            await _clientWebSocket.ConnectAsync(new Uri(webSocketServerUrl), connectionTimeoutCts.Token).ConfigureAwait(false);
 
             _logger.ConnectedToWebSocketInfo(_options.ServerUrl, _reconnectAttempts, maxAttempts);
             _reconnectAttempts = 0;
@@ -376,7 +383,7 @@ public class WebSocketClient : IWebSocketClient
             _checkHealthCts = CancellationTokenSource.CreateLinkedTokenSource(_disposalCts.Token);
 
             // No need to dispose of tasks https://devblogs.microsoft.com/dotnet/do-i-need-to-dispose-of-tasks/
-            _lastReceivedTimestampMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _ = Interlocked.Exchange(ref _lastReceivedTimestampMilliseconds, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             _checkHealthTask = CheckHealthAsync(_checkHealthCts.Token);
         }
 
@@ -485,7 +492,7 @@ public class WebSocketClient : IWebSocketClient
 
         try
         {
-            if (_isDisposed)
+            if (_isDisposed == 1)
             {
                 _logger.HandleDisconnectWhenDisposedInfo(_options.ServerUrl, statusDescription);
                 return;
@@ -514,7 +521,7 @@ public class WebSocketClient : IWebSocketClient
 
         if (!cancellationToken.IsCancellationRequested)
         {
-            using CancellationTokenSource reconnectCts = new();
+            using CancellationTokenSource reconnectCts = CancellationTokenSource.CreateLinkedTokenSource(_disposalCts.Token);
             await AttemptReconnectAsync(reconnectCts.Token).ConfigureAwait(false);
         }
     }
@@ -549,7 +556,7 @@ public class WebSocketClient : IWebSocketClient
 
     protected virtual async Task ProcessReceivedMessageAsync(WebSocketMessageType messageType, byte[] fullMessage, CancellationToken cancellationToken = default)
     {
-        _logger.ReceivedMessageDebug(_options.ServerUrl, fullMessage.Length);
+        _logger.ReceivedMessageDebug(messageType.ToString(), _options.ServerUrl, fullMessage.Length);
 
         try
         {
@@ -680,7 +687,7 @@ public class WebSocketClient : IWebSocketClient
                     return;
                 }
 
-                _lastReceivedTimestampMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                _ = Interlocked.Exchange(ref _lastReceivedTimestampMilliseconds, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
                 if (exceededMaxAllowedMessageSize)
                 {
@@ -697,11 +704,14 @@ public class WebSocketClient : IWebSocketClient
 
                 if (result.EndOfMessage)
                 {
-                    byte[] fullMessage = messageStream.ToArray();
+                    if (!exceededMaxAllowedMessageSize)
+                    {
+                        byte[] fullMessage = messageStream.ToArray();
+                        await ProcessReceivedMessageAsync(result.MessageType, fullMessage, cancellationToken).ConfigureAwait(false);
+                    }
+
                     messageStream.SetLength(0);
                     exceededMaxAllowedMessageSize = false;
-
-                    await ProcessReceivedMessageAsync(result.MessageType, fullMessage, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -739,16 +749,11 @@ public class WebSocketClient : IWebSocketClient
 
     protected virtual async Task<string> SendAndWaitForJsonRpc2Response<TParams>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
+
         _logger.SendAndWaitForJsonRpc2ResponseInfo(_options.ServerUrl, request.Method, request.Id);
 
-        await SendTextMessageAsync(request, cancellationToken).ConfigureAwait(false);
-
         using CancellationTokenSource responseTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (_options.ResponseTimeoutMilliseconds > 0)
-        {
-            responseTimeoutCts.CancelAfter(_options.ResponseTimeoutMilliseconds);
-        }
-
         TaskCompletionSource<string> responseTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         bool isAdded = false;
@@ -767,8 +772,15 @@ public class WebSocketClient : IWebSocketClient
             throw new ArgumentException("Duplicate request id", nameof(request));
         }
 
+        await SendTextMessageAsync(request, cancellationToken).ConfigureAwait(false);
+
         try
         {
+            if (_options.ResponseTimeoutMilliseconds > 0)
+            {
+                responseTimeoutCts.CancelAfter(_options.ResponseTimeoutMilliseconds);
+            }
+
             return await responseTcs.Task.WaitAsync(responseTimeoutCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -789,7 +801,7 @@ public class WebSocketClient : IWebSocketClient
 
     protected virtual async Task SendTextMessageAsync<TMessage>(TMessage messageObject, CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
 
         if (!IsConnected)
         {
@@ -1208,9 +1220,9 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 400,
         Level = LogLevel.Debug,
-        Message = "Received message at WebSocket {SocketUrl} with size of {MessageSize} bytes")]
+        Message = "Received {MessageType} message at WebSocket {SocketUrl} with size of {MessageSize} bytes")]
     public static partial void ReceivedMessageDebug(
-        this ILogger logger, string socketUrl, long messageSize);
+        this ILogger logger, string messageType, string socketUrl, long messageSize);
 
     [LoggerMessage(
         EventId = 410,
