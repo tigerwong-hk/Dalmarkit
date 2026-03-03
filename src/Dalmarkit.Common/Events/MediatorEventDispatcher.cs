@@ -18,7 +18,6 @@ public class MediatorEventDispatcher(IMediator mediator, ILogger<MediatorEventDi
         try
         {
             await _mediator.Publish(notification, cancellationToken).ConfigureAwait(false);
-            _logger.DispatchedEventInfo(message.ToString() ?? string.Empty);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -31,13 +30,6 @@ public static partial class MediatorEventDispatcherLogs
 {
     [LoggerMessage(
         EventId = 10,
-        Level = LogLevel.Information,
-        Message = "Dispatched event {Message}")]
-    public static partial void DispatchedEventInfo(
-        this ILogger logger, string message);
-
-    [LoggerMessage(
-        EventId = 20,
         Level = LogLevel.Error,
         Message = "Dispatch exception for event {Message} with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void DispatchEventException(

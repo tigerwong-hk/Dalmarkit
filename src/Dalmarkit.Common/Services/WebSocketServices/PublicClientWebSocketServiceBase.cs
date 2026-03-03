@@ -137,7 +137,7 @@ public abstract class PublicClientWebSocketServiceBase(
             {
                 while (channelReader.TryRead(out WebSocketReceivedMessage<string> receivedTextMessage))
                 {
-                    _logger.ReceivedTextMessageDebug(receivedTextMessage.ReceivedAt.ToString("u"), receivedTextMessage.Data);
+                    _logger.ReceivedTextMessageDebug(receivedTextMessage.Data);
 
                     if (string.IsNullOrWhiteSpace(receivedTextMessage.Data))
                     {
@@ -480,9 +480,9 @@ public static partial class PublicClientWebSocketServiceBaseLogs
     [LoggerMessage(
         EventId = 60,
         Level = LogLevel.Debug,
-        Message = "Received text message at {ReceivedAt}: {TextMessage}")]
+        Message = "Received text message: {TextMessage}")]
     public static partial void ReceivedTextMessageDebug(
-        this ILogger logger, string receivedAt, string textMessage);
+        this ILogger logger, string textMessage);
 
     [LoggerMessage(
         EventId = 70,
