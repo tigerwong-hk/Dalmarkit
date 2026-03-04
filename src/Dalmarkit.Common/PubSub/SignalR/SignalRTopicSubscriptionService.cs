@@ -191,9 +191,7 @@ public class SignalRTopicSubscriptionService(
 
     protected virtual bool UnsubscribeTopic(string subscriberId, string topicName, string topicPrefix)
     {
-        _ = SubscriberTopicsRemove(subscriberId, topicName);
-
-        return TopicsByPrefixRemove(subscriberId, topicName, topicPrefix);
+        return SubscriberTopicsRemove(subscriberId, topicName) && TopicsByPrefixRemove(subscriberId, topicName, topicPrefix);
     }
 }
 

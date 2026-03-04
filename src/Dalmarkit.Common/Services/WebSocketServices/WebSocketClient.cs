@@ -772,10 +772,10 @@ public class WebSocketClient : IWebSocketClient
             throw new ArgumentException("Duplicate request id", nameof(request));
         }
 
-        await SendTextMessageAsync(request, cancellationToken).ConfigureAwait(false);
-
         try
         {
+            await SendTextMessageAsync(request, cancellationToken).ConfigureAwait(false);
+
             if (_options.ResponseTimeoutMilliseconds > 0)
             {
                 responseTimeoutCts.CancelAfter(_options.ResponseTimeoutMilliseconds);
