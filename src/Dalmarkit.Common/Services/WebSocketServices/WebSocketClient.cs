@@ -16,7 +16,7 @@ namespace Dalmarkit.Common.Services.WebSocketServices;
 
 public class WebSocketClient : IWebSocketClient
 {
-    public const int PendingRequestsInitialCapacity = 8209;
+    public const int PendingRequestsInitialCapacity = 503;
 
     private readonly IEventDispatcher _eventDispatcher;
     private readonly ConcurrentDictionary<object, TaskCompletionSource<string>> _pendingRequests = new(Environment.ProcessorCount, PendingRequestsInitialCapacity);
