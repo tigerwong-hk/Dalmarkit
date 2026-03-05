@@ -383,8 +383,10 @@ public abstract class PublicClientWebSocketServiceBase(
         IEnumerable<string> channelsNotSubscribed = channelNames.Except(channelsSubscribed);
         List<string> channelsToRemove = [.. channelsNotSubscribed];
         List<string> removedChannels = RemoveChannels(channelsToRemove);
-
-        _logger.SubscribeExchangeChannelsRemovedChannels(removedChannels);
+        if (removedChannels.Count > 0)
+        {
+            _logger.SubscribeExchangeChannelsRemovedChannelsInfo(removedChannels);
+        }
 
         return channelsToRemove;
     }
@@ -717,9 +719,9 @@ public static partial class PublicClientWebSocketServiceBaseLogs
 
     [LoggerMessage(
         EventId = 400,
-        Level = LogLevel.Error,
+        Level = LogLevel.Information,
         Message = "SubscribeExchangeChannels: removed channels `{ChannelNames}`")]
-    public static partial void SubscribeExchangeChannelsRemovedChannels(
+    public static partial void SubscribeExchangeChannelsRemovedChannelsInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
