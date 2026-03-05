@@ -44,7 +44,7 @@ public class WebSocketClient : IWebSocketClient
     private volatile int _reconnectAttempts;
 
     private volatile WebSocketConnectionState _connectionState = WebSocketConnectionState.Disconnected;
-    private Func<string>? _getWebSocketServerUrl;
+    private volatile Func<string>? _getWebSocketServerUrl;
 
     public bool IsConnected => _clientWebSocket?.State == WebSocketState.Open;
     public bool HasReachedMaxReconnectAttempts => _reconnectAttempts >= (_options.Reconnection?.MaxAttempts ?? 0);
