@@ -14,12 +14,12 @@ public abstract class SignalRTopicHubBase(ITopicSubscriptionService subscription
         return _subscriptionService.GetSubscriberTopics(Context.ConnectionId);
     }
 
-    public virtual async Task<ImmutableHashSet<string>> RemoveConnectionAsync(string connectionId)
+    public virtual async Task<ImmutableHashSet<string>> RemoveConnectionAsync()
     {
         ImmutableHashSet<string> topicsRemoved = _subscriptionService.RemoveSubscriber(Context.ConnectionId, GetTopicPrefix);
         foreach (string topic in topicsRemoved)
         {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, topic);
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, topic).ConfigureAwait(false);
         }
 
         return topicsRemoved;
@@ -30,7 +30,7 @@ public abstract class SignalRTopicHubBase(ITopicSubscriptionService subscription
         bool isSubscribed = _subscriptionService.SubscribeTopic(Context.ConnectionId, topic, GetTopicPrefix);
         if (isSubscribed)
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, topic);
+            await Groups.AddToGroupAsync(Context.ConnectionId, topic).ConfigureAwait(false);
         }
 
         return isSubscribed;
@@ -38,7 +38,7 @@ public abstract class SignalRTopicHubBase(ITopicSubscriptionService subscription
 
     public virtual async Task<bool> UnsubscribeTopicAsync(string topic)
     {
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, topic);
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, topic).ConfigureAwait(false);
         return _subscriptionService.UnsubscribeTopic(Context.ConnectionId, topic, GetTopicPrefix);
     }
 
