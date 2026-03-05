@@ -379,13 +379,32 @@ public abstract class PublicClientWebSocketServiceBase(
 
     protected virtual async Task<List<string>> SubscribeExchangeChannelsAsync(List<string> channelNames, CancellationToken cancellationToken = default)
     {
-        List<string> channelsSubscribed = await SendSubscribeRequestAsync(channelNames, cancellationToken).ConfigureAwait(false);
-        IEnumerable<string> channelsNotSubscribed = channelNames.Except(channelsSubscribed);
-        List<string> channelsToRemove = [.. channelsNotSubscribed];
-        List<string> removedChannels = RemoveChannels(channelsToRemove);
-        if (removedChannels.Count > 0)
+        List<string> channelsSubscribed = [];
+        try
         {
-            _logger.SubscribeExchangeChannelsRemovedChannelsInfo(removedChannels);
+            channelsSubscribed = await SendSubscribeRequestAsync(channelNames, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.SubscribeExchangeChannelsSendSubscribeRequestException(channelNames, ex);
+        }
+
+        IEnumerable<string> channelsNotSubscribed = channelNames.Except(channelsSubscribed, StringComparer.Ordinal);
+        List<string> channelsToRemove = [.. channelsNotSubscribed];
+        if (channelsToRemove.Count > 0)
+        {
+            try
+            {
+                List<string> removedChannels = RemoveChannels(channelsToRemove);
+                if (removedChannels.Count > 0)
+                {
+                    _logger.SubscribeExchangeChannelsRemovedChannelsInfo(removedChannels);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.SubscribeExchangeChannelsRemoveChannelsException(channelsToRemove, ex);
+            }
         }
 
         return channelsToRemove;
@@ -427,7 +446,16 @@ public abstract class PublicClientWebSocketServiceBase(
 
     protected virtual async Task<List<string>> UnsubscribeExchangeChannelsAsync(List<string> channelNames, CancellationToken cancellationToken = default)
     {
-        List<string> channelsUnsubscribed = await SendUnsubscribeRequestAsync(channelNames, cancellationToken).ConfigureAwait(false);
+        List<string> channelsUnsubscribed = [];
+        try
+        {
+            channelsUnsubscribed = await SendUnsubscribeRequestAsync(channelNames, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.UnsubscribeExchangeChannelsSendUnsubscribeRequestException(channelNames, ex);
+        }
+
         IEnumerable<string> channelsNotUnsubscribed = channelNames.Except(channelsUnsubscribed);
 
         return [.. channelsNotUnsubscribed];
@@ -719,78 +747,99 @@ public static partial class PublicClientWebSocketServiceBaseLogs
 
     [LoggerMessage(
         EventId = 400,
+        Level = LogLevel.Error,
+        Message = "SubscribeExchangeChannels: send subscribe request exception for `{ChannelNames}`")]
+    public static partial void SubscribeExchangeChannelsSendSubscribeRequestException(
+        this ILogger logger, List<string> channelNames, Exception exception);
+
+    [LoggerMessage(
+        EventId = 410,
         Level = LogLevel.Information,
         Message = "SubscribeExchangeChannels: removed channels `{ChannelNames}`")]
     public static partial void SubscribeExchangeChannelsRemovedChannelsInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 410,
+        EventId = 420,
+        Level = LogLevel.Error,
+        Message = "SubscribeExchangeChannels: remove channels exception for `{ChannelNames}`")]
+    public static partial void SubscribeExchangeChannelsRemoveChannelsException(
+        this ILogger logger, List<string> channelNames, Exception exception);
+
+    [LoggerMessage(
+        EventId = 430,
         Level = LogLevel.Error,
         Message = "Unsubscribe channels internal with no channel names")]
     public static partial void UnsubscribeChannelsInternalNoChannelNamesError(
         this ILogger logger);
 
     [LoggerMessage(
-        EventId = 420,
+        EventId = 440,
         Level = LogLevel.Information,
         Message = "Unsubscribe channels internal unsubscribing channels `{ChannelNames}`")]
     public static partial void UnsubscribeChannelsInternalUnsubscribingChannelsInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 430,
+        EventId = 450,
         Level = LogLevel.Information,
         Message = "Unsubscribe channels internal not unsubscribed channels `{ChannelNames}`")]
     public static partial void UnsubscribeChannelsInternalChannelsNotUnsubscribedInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 440,
+        EventId = 460,
         Level = LogLevel.Warning,
         Message = "Unsubscribe channels internal subscription channel not removed for `{ChannelName}`")]
     public static partial void UnsubscribeChannelsInternalSubscriptionChannelNotRemovedWarning(
         this ILogger logger, string channelName);
 
     [LoggerMessage(
-        EventId = 450,
+        EventId = 470,
         Level = LogLevel.Error,
         Message = "Unsubscribe channels internal notification message type null for `{ChannelName}`")]
     public static partial void UnsubscribeChannelsInternalNotificationMessageTypeNullError(
         this ILogger logger, string channelName);
 
     [LoggerMessage(
-        EventId = 460,
+        EventId = 480,
         Level = LogLevel.Error,
         Message = "Unsubscribe channels internal notification message type not removed for `{ChannelName}`: {NotificationMessageType}")]
     public static partial void UnsubscribeChannelsInternalNotificationMessageTypeNotRemovedError(
         this ILogger logger, string channelName, string? notificationMessageType);
 
     [LoggerMessage(
-        EventId = 470,
+        EventId = 490,
         Level = LogLevel.Warning,
         Message = "Unsubscribe channels internal message channel null for `{ChannelName}`: {NotificationMessageType}")]
     public static partial void UnsubscribeChannelsInternalMessageChannelNullWarning(
         this ILogger logger, string channelName, string? notificationMessageType);
 
     [LoggerMessage(
-        EventId = 480,
+        EventId = 500,
         Level = LogLevel.Warning,
         Message = "Unsubscribe channels internal message channel not marked as complete for `{ChannelName}`: {NotificationMessageType}")]
     public static partial void UnsubscribeChannelsInternalMessageChannelNotMarkedCompleteWarning(
         this ILogger logger, string channelName, string? notificationMessageType);
 
     [LoggerMessage(
-        EventId = 490,
+        EventId = 510,
         Level = LogLevel.Information,
         Message = "Unsubscribe channels internal canceled for `{ChannelNames}`")]
     public static partial void UnsubscribeChannelsInternalCanceledInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 500,
+        EventId = 520,
         Level = LogLevel.Error,
         Message = "Unsubscribe channels internal exception for `{ChannelNames}`with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void UnsubscribeChannelsInternalException(
         this ILogger logger, List<string> channelNames, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 530,
+        Level = LogLevel.Error,
+        Message = "UnsubscribeExchangeChannels: send unsubscribe request exception for `{ChannelNames}`")]
+    public static partial void UnsubscribeExchangeChannelsSendUnsubscribeRequestException(
+        this ILogger logger, List<string> channelNames, Exception exception);
 }
