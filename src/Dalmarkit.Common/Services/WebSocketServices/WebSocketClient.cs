@@ -44,7 +44,7 @@ public class WebSocketClient : IWebSocketClient
     private volatile int _reconnectAttempts;
 
     private volatile WebSocketConnectionState _connectionState = WebSocketConnectionState.Disconnected;
-    private Func<string>? _GetWebSocketServerUrl;
+    private Func<string>? _getWebSocketServerUrl;
 
     public bool IsConnected => _clientWebSocket?.State == WebSocketState.Open;
     public bool HasReachedMaxReconnectAttempts => _reconnectAttempts >= (_options.Reconnection?.MaxAttempts ?? 0);
@@ -161,7 +161,7 @@ public class WebSocketClient : IWebSocketClient
             _ = _connectionSemaphore.Release();
         }
 
-        _GetWebSocketServerUrl = getWebSocketServerUrl;
+        _getWebSocketServerUrl = getWebSocketServerUrl;
         try
         {
             await ConnectInternalAsync(cancellationToken).ConfigureAwait(false);
@@ -358,7 +358,7 @@ public class WebSocketClient : IWebSocketClient
 
         try
         {
-            string webSocketServerUrl = _GetWebSocketServerUrl == null ? _options.ServerUrl : _GetWebSocketServerUrl();
+            string webSocketServerUrl = _getWebSocketServerUrl == null ? _options.ServerUrl : _getWebSocketServerUrl();
             await _clientWebSocket.ConnectAsync(new Uri(webSocketServerUrl), connectionTimeoutCts.Token).ConfigureAwait(false);
 
             _logger.ConnectedToWebSocketInfo(_options.ServerUrl, _reconnectAttempts, maxAttempts);
