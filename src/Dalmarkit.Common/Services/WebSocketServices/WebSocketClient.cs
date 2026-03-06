@@ -362,7 +362,7 @@ public class WebSocketClient : IWebSocketClient
             await _clientWebSocket.ConnectAsync(new Uri(webSocketServerUrl), connectionTimeoutCts.Token).ConfigureAwait(false);
 
             _logger.ConnectedToWebSocketInfo(_options.ServerUrl, _reconnectAttempts, maxAttempts);
-            _reconnectAttempts = 0;
+            _ = Interlocked.Exchange(ref _reconnectAttempts, 0);
             _connectionState = WebSocketConnectionState.Connected;
         }
         catch (OperationCanceledException)

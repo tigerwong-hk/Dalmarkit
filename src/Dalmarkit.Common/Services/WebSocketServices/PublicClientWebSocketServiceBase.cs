@@ -87,7 +87,11 @@ public abstract class PublicClientWebSocketServiceBase(
 
             _logger.HandleOnWebSocketConnectedSubscribingChannelsInfo(channelNames);
             List<string> channelsNotSubscribed = await SubscribeExchangeChannelsAsync(channelNames, cancellationToken).ConfigureAwait(false);
-            _logger.HandleOnWebSocketConnectedChannelsNotSubscribedInfo(channelsNotSubscribed);
+            if (channelsNotSubscribed.Count > 0)
+            {
+                _logger.HandleOnWebSocketConnectedChannelsNotSubscribedInfo(channelsNotSubscribed);
+                await ReceiveChannelNotificationTasksRemoveAsync(channelsNotSubscribed, cancellationToken);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -96,6 +100,7 @@ public abstract class PublicClientWebSocketServiceBase(
         catch (Exception ex)
         {
             _logger.SubscribeOnConnectedException(channelNames, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            await ReceiveChannelNotificationTasksRemoveAsync(channelNames, cancellationToken);
         }
         finally
         {
@@ -272,7 +277,6 @@ public abstract class PublicClientWebSocketServiceBase(
 
     protected virtual async Task<Dictionary<SubscriptionChannel, Channel<WebSocketReceivedMessage<string>>>> SubscribeChannelsInternalAsync(
         List<SubscriptionChannel> subscriptionChannels,
-        Func<string, Channel<WebSocketReceivedMessage<string>>, bool> startReceiveChannelTaskDelegate,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
@@ -344,7 +348,7 @@ public abstract class PublicClientWebSocketServiceBase(
 
             try
             {
-                _ = startReceiveChannelTaskDelegate(subscriptionChannel.ChannelName, messageChannel);
+                _ = ReceiveChannelNotificationTaskStart(subscriptionChannel.ChannelName, messageChannel);
             }
             catch (Exception ex)
             {
@@ -361,7 +365,13 @@ public abstract class PublicClientWebSocketServiceBase(
             {
                 _logger.SubscribeChannelsInternalSubscribingChannelsInfo(addedChannelNames);
                 List<string> channelsNotSubscribed = await SubscribeExchangeChannelsAsync(addedChannelNames, cancellationToken).ConfigureAwait(false);
-                _logger.SubscribeChannelsInternalChannelsNotSubscribedInfo(channelsNotSubscribed);
+                if (channelsNotSubscribed.Count > 0)
+                {
+                    _logger.SubscribeChannelsInternalChannelsNotSubscribedInfo(channelsNotSubscribed);
+                    await ReceiveChannelNotificationTasksRemoveAsync(channelsNotSubscribed, cancellationToken);
+                    result = result.Where(kvp => !channelsNotSubscribed.Contains(kvp.Key.ChannelName, StringComparer.Ordinal))
+                            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -371,6 +381,8 @@ public abstract class PublicClientWebSocketServiceBase(
             catch (Exception ex)
             {
                 _logger.SubscribeChannelsInternalException(addedChannelNames, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                await ReceiveChannelNotificationTasksRemoveAsync(addedChannelNames, cancellationToken);
+                result = [];
             }
         }
 
@@ -426,7 +438,7 @@ public abstract class PublicClientWebSocketServiceBase(
         {
             try
             {
-                _logger.UnsubscribeChannelsInternalUnsubscribingChannelsInfo(channelNames);
+                _logger.UnsubscribeChannelsInternalUnsubscribingChannelsInfo(removedChannelNames);
                 List<string> channelsNotUnsubscribed = await UnsubscribeExchangeChannelsAsync(removedChannelNames, cancellationToken).ConfigureAwait(false);
                 _logger.UnsubscribeChannelsInternalChannelsNotUnsubscribedInfo(channelsNotUnsubscribed);
             }
@@ -462,6 +474,10 @@ public abstract class PublicClientWebSocketServiceBase(
     }
 
     protected abstract Task<bool> ProcessServerNotificationAsync(string message, CancellationToken cancellationToken = default);
+
+    protected abstract bool ReceiveChannelNotificationTaskStart(string channelName, Channel<WebSocketReceivedMessage<string>> receiveChannel);
+
+    protected abstract Task ReceiveChannelNotificationTasksRemoveAsync(List<string> unsubscribedChannelNames, CancellationToken cancellationToken = default);
 
     protected abstract Task<List<string>> SendSubscribeRequestAsync(List<string> channelNames, CancellationToken cancellationToken = default);
 
