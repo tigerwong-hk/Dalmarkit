@@ -101,6 +101,10 @@ public abstract class PublicClientWebSocketServiceBase(
                 await ReceiveChannelNotificationTasksRemoveAsync(channelNames, cancellationToken);
             }
         }
+        catch (OperationCanceledException)
+        {
+            _logger.SubscribeOnConnectedCanceledInfo();
+        }
         catch (Exception ex)
         {
             _logger.SubscribeOnConnectedException(channelNames, ex.Message, ex.InnerException?.Message, ex.StackTrace);
@@ -511,6 +515,13 @@ public static partial class PublicClientWebSocketServiceBaseLogs
         Message = "Subscribe on connected subscribe exchange channels exception for channels `{ChannelNames}`")]
     public static partial void SubscribeOnConnectedSubscribeExchangeChannelsException(
         this ILogger logger, List<string> channelNames, Exception exception);
+
+    [LoggerMessage(
+        EventId = 35,
+        Level = LogLevel.Information,
+        Message = "Subscribe on connected canceled")]
+    public static partial void SubscribeOnConnectedCanceledInfo(
+        this ILogger logger);
 
     [LoggerMessage(
         EventId = 40,
