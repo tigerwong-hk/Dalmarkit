@@ -86,21 +86,24 @@ public abstract class PublicClientWebSocketServiceBase(
             _ = Interlocked.Exchange(ref _hasSubscribedOnConnected, 1);
 
             _logger.HandleOnWebSocketConnectedSubscribingChannelsInfo(channelNames);
-            List<string> channelsNotSubscribed = await SubscribeExchangeChannelsAsync(channelNames, cancellationToken).ConfigureAwait(false);
-            if (channelsNotSubscribed.Count > 0)
+            try
             {
-                _logger.HandleOnWebSocketConnectedChannelsNotSubscribedInfo(channelsNotSubscribed);
-                await ReceiveChannelNotificationTasksRemoveAsync(channelsNotSubscribed, cancellationToken);
+                List<string> channelsNotSubscribed = await SubscribeExchangeChannelsAsync(channelNames, cancellationToken).ConfigureAwait(false);
+                if (channelsNotSubscribed.Count > 0)
+                {
+                    _logger.HandleOnWebSocketConnectedChannelsNotSubscribedInfo(channelsNotSubscribed);
+                    await ReceiveChannelNotificationTasksRemoveAsync(channelsNotSubscribed, cancellationToken);
+                }
             }
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.SubscribeOnConnectedCanceledInfo();
+            catch (Exception ex)
+            {
+                _logger.SubscribeOnConnectedSubscribeExchangeChannelsException(channelNames, ex);
+                await ReceiveChannelNotificationTasksRemoveAsync(channelNames, cancellationToken);
+            }
         }
         catch (Exception ex)
         {
             _logger.SubscribeOnConnectedException(channelNames, ex.Message, ex.InnerException?.Message, ex.StackTrace);
-            await ReceiveChannelNotificationTasksRemoveAsync(channelNames, cancellationToken);
         }
         finally
         {
@@ -505,9 +508,9 @@ public static partial class PublicClientWebSocketServiceBaseLogs
     [LoggerMessage(
         EventId = 30,
         Level = LogLevel.Information,
-        Message = "Subscribe on connected canceled")]
-    public static partial void SubscribeOnConnectedCanceledInfo(
-        this ILogger logger);
+        Message = "Subscribe on connected subscribe exchange channels exception for channels `{ChannelNames}`")]
+    public static partial void SubscribeOnConnectedSubscribeExchangeChannelsException(
+        this ILogger logger, List<string> channelNames, Exception exception);
 
     [LoggerMessage(
         EventId = 40,
