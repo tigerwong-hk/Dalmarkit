@@ -48,6 +48,11 @@ public class WebSocketClientOptions
             throw new ArgumentException("Keep alive interval must be non-negative", nameof(KeepAliveIntervalMilliseconds));
         }
 
+        if (MaxMessageByteSize < 0)
+        {
+            throw new ArgumentException("Maximum message size must be non-negative", nameof(MaxMessageByteSize));
+        }
+
         if (KeepAliveTimeoutMilliseconds < 0)
         {
             throw new ArgumentException("Keep alive timeout must be non-negative", nameof(KeepAliveTimeoutMilliseconds));

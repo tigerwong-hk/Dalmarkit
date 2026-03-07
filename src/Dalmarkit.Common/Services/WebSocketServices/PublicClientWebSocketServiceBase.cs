@@ -14,8 +14,9 @@ public abstract class PublicClientWebSocketServiceBase(
 {
     public const int GracefulShutdownTimeoutMilliseconds = 10000;
     public const int SubscribedChannelMessageDefaultCapacity = 8192;
-    public const int SubscribedChannelsInitialCapacity = 2053;
+    public const int SubscribedChannelsInitialCapacity = 8209;
 
+    private readonly CancellationTokenSource _disposalCts = new();
     private readonly IWebSocketClient _webSocketClient = webSocketClient ?? throw new ArgumentNullException(nameof(webSocketClient));
     private readonly ILogger<PublicClientWebSocketServiceBase> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -26,6 +27,7 @@ public abstract class PublicClientWebSocketServiceBase(
     private bool HasSubscribedOnConnected => Volatile.Read(ref _hasSubscribedOnConnected) != 0;
 
     private volatile int _isDisposed;
+
     private readonly SemaphoreSlim _receiveSemaphore = new(1, 1);
     private CancellationTokenSource? _receiveTextMessageCts;
     private Task? _receiveTextMessageTask;
@@ -49,11 +51,15 @@ public abstract class PublicClientWebSocketServiceBase(
         }
 
         _receiveTextMessageCts?.Cancel();
+        _disposalCts.Cancel();
+
         _receiveTextMessageCts?.Dispose();
         _receiveTextMessageCts = null;
 
         // No need to dispose of tasks https://devblogs.microsoft.com/dotnet/do-i-need-to-dispose-of-tasks/
         _receiveTextMessageTask = null;
+
+        _disposalCts.Dispose();
 
         _receiveSemaphore.Dispose();
     }
@@ -76,7 +82,7 @@ public abstract class PublicClientWebSocketServiceBase(
         {
             _receiveTextMessageCts?.Cancel();
             _receiveTextMessageCts?.Dispose();
-            _receiveTextMessageCts = new();
+            _receiveTextMessageCts = CancellationTokenSource.CreateLinkedTokenSource(_disposalCts.Token);
 
             // No need to dispose of tasks https://devblogs.microsoft.com/dotnet/do-i-need-to-dispose-of-tasks/
             _receiveTextMessageTask = ReceiveWebSocketTextMessagesAsync(_receiveTextMessageCts.Token);
