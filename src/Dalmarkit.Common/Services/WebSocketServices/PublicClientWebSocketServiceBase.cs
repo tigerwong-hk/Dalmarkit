@@ -123,6 +123,7 @@ public abstract class PublicClientWebSocketServiceBase(
 
     public virtual async ValueTask Handle(WebSocketClientEvents.OnWebSocketDisconnected notification, CancellationToken cancellationToken = default)
     {
+        _ = Interlocked.Exchange(ref _hasSubscribedOnConnected, 0);
         await ShutdownReceiveTextMessageTaskAsync(cancellationToken).ConfigureAwait(false);
     }
 
