@@ -70,7 +70,7 @@ public class WebSocketClient : IWebSocketClient
 
     public WebSocketConnectionState ConnectionState => (WebSocketConnectionState)Volatile.Read(ref _connectionStateValue);
 
-    internal static JsonSerializerOptions JsonWebOptions => JsonSerializerOptions.Web;
+    public static JsonSerializerOptions JsonWebOptions => JsonSerializerOptions.Web;
 
     public WebSocketClient(
         IEventDispatcher eventDispatcher,
