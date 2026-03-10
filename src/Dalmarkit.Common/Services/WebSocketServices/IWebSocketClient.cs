@@ -5,7 +5,7 @@ namespace Dalmarkit.Common.Services.WebSocketServices;
 
 public interface IWebSocketClient : IDisposable
 {
-    bool IsConnected { get; }
+    bool IsConnectionConnected { get; }
     bool HasReachedMaxReconnectAttempts { get; }
     WebSocketConnectionState ConnectionState { get; }
 

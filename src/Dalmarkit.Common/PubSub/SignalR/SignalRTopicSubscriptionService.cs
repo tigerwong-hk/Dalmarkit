@@ -14,11 +14,11 @@ public class SignalRTopicSubscriptionService(
 
     private readonly ILogger<SignalRTopicSubscriptionService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly Lock _mutationLock = new();
-    private readonly ConcurrentDictionary<string, ImmutableHashSet<string>> _subscriberTopics = new(Environment.ProcessorCount, SubscriberTopicsInitialCapacity, StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ImmutableHashSet<string>> _subscriberTopics = new(Environment.ProcessorCount, SubscriberTopicsInitialCapacity, StringComparer.OrdinalIgnoreCase);
 #pragma warning disable IDE0028 // Simplify collection initialization
     private readonly Dictionary<string, int> _topicNumSubscribers = new(StringComparer.Ordinal);
 #pragma warning restore IDE0028 // Simplify collection initialization
-    private readonly ConcurrentDictionary<string, ImmutableHashSet<string>> _topicsByPrefix = new(Environment.ProcessorCount, TopicsByPrefixInitialCapacity, StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ImmutableHashSet<string>> _topicsByPrefix = new(Environment.ProcessorCount, TopicsByPrefixInitialCapacity, StringComparer.OrdinalIgnoreCase);
 
     public virtual ImmutableHashSet<string> GetSubscriberTopics(string subscriberId)
     {

@@ -166,7 +166,7 @@ public abstract class PublicClientWebSocketServiceBase(
 
                     try
                     {
-                        bool isSuccess = await processReceiveTextMessage(receivedTextMessage.Data).ConfigureAwait(false);
+                        _ = await processReceiveTextMessage(receivedTextMessage.Data).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
