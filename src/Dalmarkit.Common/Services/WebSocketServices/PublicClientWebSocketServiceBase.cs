@@ -338,6 +338,8 @@ public abstract class PublicClientWebSocketServiceBase(
                 {
                     _logger.SubscribeChannelsInternalNotificationMessageTypeNotAddedError(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType);
 
+                    _ = messageChannel.Writer.TryComplete();
+
                     bool isChannelRemoved = _subscribedChannels.TryRemove(subscriptionChannel.ChannelName, out _);
                     if (!isChannelRemoved)
                     {
@@ -351,6 +353,8 @@ public abstract class PublicClientWebSocketServiceBase(
             {
                 _logger.SubscribeChannelsInternalNotificationMessageTypeAddException(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType, ex.Message, ex.InnerException?.Message, ex.StackTrace);
 
+                _ = messageChannel.Writer.TryComplete();
+
                 bool isChannelRemoved = _subscribedChannels.TryRemove(subscriptionChannel.ChannelName, out _);
                 if (!isChannelRemoved)
                 {
@@ -362,11 +366,47 @@ public abstract class PublicClientWebSocketServiceBase(
 
             try
             {
-                _ = ReceiveChannelNotificationTaskStart(subscriptionChannel.ChannelName, messageChannel);
+                bool isTaskStarted = ReceiveChannelNotificationTaskStart(subscriptionChannel.ChannelName, messageChannel);
+                if (!isTaskStarted)
+                {
+                    _logger.SubscribeChannelsInternalReceiveChannelNotificationTaskNotStartedError(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType);
+
+                    _ = messageChannel.Writer.TryComplete();
+
+                    bool isNotificationMessageTypeRemoved = _notificationMessageTypes.TryRemove(subscriptionChannel.NotificationMessageType ?? subscriptionChannel.ChannelName, out _);
+                    if (!isNotificationMessageTypeRemoved)
+                    {
+                        _logger.SubscribeChannelsInternalNotificationMessageTypeNotRemovedForTaskNotStartedWarning(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType);
+                    }
+
+                    bool isChannelRemoved = _subscribedChannels.TryRemove(subscriptionChannel.ChannelName, out _);
+                    if (!isChannelRemoved)
+                    {
+                        _logger.SubscribeChannelsInternalChannelNotRemovedForTaskNotStartedWarning(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType);
+                    }
+
+                    continue;
+                }
             }
             catch (Exception ex)
             {
                 _logger.SubscribeChannelsInternalStartReceiveChannelTaskException(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+
+                _ = messageChannel.Writer.TryComplete();
+
+                bool isNotificationMessageTypeRemoved = _notificationMessageTypes.TryRemove(subscriptionChannel.NotificationMessageType ?? subscriptionChannel.ChannelName, out _);
+                if (!isNotificationMessageTypeRemoved)
+                {
+                    _logger.SubscribeChannelsInternalNotificationMessageTypeNotRemovedForStartTaskExceptionWarning(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType);
+                }
+
+                bool isChannelRemoved = _subscribedChannels.TryRemove(subscriptionChannel.ChannelName, out _);
+                if (!isChannelRemoved)
+                {
+                    _logger.SubscribeChannelsInternalChannelNotRemovedForStartTaskExceptionWarning(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType);
+                }
+
+                continue;
             }
 
             addedChannelNames.Add(subscriptionChannel.ChannelName);
@@ -741,11 +781,46 @@ public static partial class PublicClientWebSocketServiceBaseLogs
         this ILogger logger, string channelName, string? notificationMessageType);
 
     [LoggerMessage(
+        EventId = 332,
+        Level = LogLevel.Error,
+        Message = "Subscribe channels internal receive channel notification task not removed for task not started at `{ChannelName}`: {NotificationMessageType}")]
+    public static partial void SubscribeChannelsInternalReceiveChannelNotificationTaskNotStartedError(
+        this ILogger logger, string channelName, string? notificationMessageType);
+
+    [LoggerMessage(
+        EventId = 334,
+        Level = LogLevel.Warning,
+        Message = "Subscribe channels internal notification message type not removed for task not started at `{ChannelName}`: {NotificationMessageType}")]
+    public static partial void SubscribeChannelsInternalNotificationMessageTypeNotRemovedForTaskNotStartedWarning(
+        this ILogger logger, string channelName, string? notificationMessageType);
+
+    [LoggerMessage(
+        EventId = 336,
+        Level = LogLevel.Warning,
+        Message = "Subscribe channels internal channel not removed for task not started at `{ChannelName}`: {NotificationMessageType}")]
+    public static partial void SubscribeChannelsInternalChannelNotRemovedForTaskNotStartedWarning(
+        this ILogger logger, string channelName, string? notificationMessageType);
+
+    [LoggerMessage(
         EventId = 340,
         Level = LogLevel.Error,
         Message = "Subscribe channels internal start receive channel task exception for `{ChannelName}`/`{NotificationMessageType}` with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void SubscribeChannelsInternalStartReceiveChannelTaskException(
         this ILogger logger, string channelName, string? notificationMessageType, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 342,
+        Level = LogLevel.Warning,
+        Message = "Subscribe channels internal notification message type not removed for start task exception at `{ChannelName}`: {NotificationMessageType}")]
+    public static partial void SubscribeChannelsInternalNotificationMessageTypeNotRemovedForStartTaskExceptionWarning(
+        this ILogger logger, string channelName, string? notificationMessageType);
+
+    [LoggerMessage(
+        EventId = 344,
+        Level = LogLevel.Warning,
+        Message = "Subscribe channels internal channel not removed for task not started at `{ChannelName}`: {NotificationMessageType}")]
+    public static partial void SubscribeChannelsInternalChannelNotRemovedForStartTaskExceptionWarning(
+        this ILogger logger, string channelName, string? notificationMessageType);
 
     [LoggerMessage(
         EventId = 350,
