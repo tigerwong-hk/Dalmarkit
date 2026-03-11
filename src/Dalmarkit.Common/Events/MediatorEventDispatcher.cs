@@ -19,9 +19,10 @@ public class MediatorEventDispatcher(IMediator mediator, ILogger<MediatorEventDi
         {
             await _mediator.Publish(notification, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.DispatchEventException(message.ToString() ?? string.Empty, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            throw;
         }
     }
 }

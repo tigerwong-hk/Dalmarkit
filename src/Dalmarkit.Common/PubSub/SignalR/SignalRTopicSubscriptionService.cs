@@ -1,229 +1,275 @@
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
+using System.Collections.Concurrent;
+using System.Collections.Immutable;
 
 namespace Dalmarkit.Common.PubSub.SignalR;
 
 public class SignalRTopicSubscriptionService(
-    IConnectionMultiplexer redis,
     ILogger<SignalRTopicSubscriptionService> logger) : ITopicSubscriptionService
 {
-    /// <summary>
-    /// TTL to auto-expire stale keys in case miss cleanup
-    /// </summary>
-    public static readonly TimeSpan AutoStaleKeyExpiry = TimeSpan.FromHours(24);
+    public const int SubscriberTopicsInitialCapacity = 100003;
+    public const int TopicsByPrefixInitialCapacity = 8209;
+    public const int TopicsPerSubscriberMax = 300;
 
-    public virtual string ConnectionKeyPrefix => _connectionKeyPrefix;
-    public virtual string SubscriptionKey => _subscriptionKey;
-    public virtual string TopicKeyPrefix => _topicKeyPrefix;
+    private static readonly ImmutableHashSet<string> EmptyHashSet = [];
 
-    /// <summary>
-    /// SET - connectionId => {topics}
-    /// </summary>
-    private const string _connectionKeyPrefix = "sigr|conns|";
-    private const string _subscriptionKey = "sigr|subs";
-    /// <summary>
-    /// SET - topic => {connectionIds}
-    /// </summary>
-    private const string _topicKeyPrefix = "sigr|topics|";
-
-    private readonly IConnectionMultiplexer _redis = redis ?? throw new ArgumentNullException(nameof(redis));
     private readonly ILogger<SignalRTopicSubscriptionService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly Lock _mutationLock = new();
+    private readonly ConcurrentDictionary<string, ImmutableHashSet<string>> _subscriberTopics = new(Environment.ProcessorCount, SubscriberTopicsInitialCapacity, StringComparer.OrdinalIgnoreCase);
+#pragma warning disable IDE0028 // Simplify collection initialization
+    private readonly Dictionary<string, int> _topicNumSubscribers = new(StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028 // Simplify collection initialization
+    private readonly ConcurrentDictionary<string, ImmutableHashSet<string>> _topicsByPrefix = new(Environment.ProcessorCount, TopicsByPrefixInitialCapacity, StringComparer.OrdinalIgnoreCase);
 
-    private IDatabase RedisDb => _redis.GetDatabase();
-
-    public virtual async Task<IReadOnlyCollection<string>> GetAllSubscribedTopics()
+    public virtual ImmutableHashSet<string> GetSubscriberTopics(string subscriberId)
     {
-        RedisValue[] members = await RedisDb.SetMembersAsync(SubscriptionKey);
-        return members.Select(m => m.ToString()).ToList().AsReadOnly();
+        _ = _subscriberTopics.TryGetValue(subscriberId, out ImmutableHashSet<string>? subscriberTopics);
+        return subscriberTopics ?? EmptyHashSet;
     }
 
-    public virtual async Task<IReadOnlyCollection<string>> GetSubscribedTopicsByConnectionIdAsync(string connectionId)
+    public virtual ImmutableHashSet<string> GetTopicsByPrefix(string prefix)
     {
-        RedisValue[] members = await RedisDb.SetMembersAsync(ConnectionKeyPrefix + connectionId);
-        return members.Select(m => m.ToString()).ToList().AsReadOnly();
+        _ = _topicsByPrefix.TryGetValue(prefix, out ImmutableHashSet<string>? topicsByPrefix);
+        return topicsByPrefix ?? EmptyHashSet;
     }
 
-    public virtual async Task<IReadOnlyCollection<string>> GetSubscribedTopicsByPrefixAsync(string prefix)
+    public virtual ImmutableHashSet<string> RemoveSubscriber(string subscriberId, Func<string, string>? GetTopicPrefix)
     {
-        IReadOnlyCollection<string> subscribedTopics = await GetAllSubscribedTopics();
-        return subscribedTopics.Where(st => st.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList().AsReadOnly();
-    }
-
-    public virtual async Task<IReadOnlyCollection<string>> GetTopicSubscribersAsync(string topic)
-    {
-        RedisValue[] members = await RedisDb.SetMembersAsync(TopicKeyPrefix + topic);
-        return members.Select(m => m.ToString()).ToList().AsReadOnly();
-    }
-
-    public virtual async Task<bool> IsTopicSubscribedAsync(string connectionId, string topic)
-    {
-        return await RedisDb.SetContainsAsync(TopicKeyPrefix + topic, connectionId);
-    }
-
-    public virtual async Task<IReadOnlyCollection<string>> RemoveConnectionAsync(string connectionId)
-    {
-        string connectionKey = ConnectionKeyPrefix + connectionId;
-
-        IDatabase redisDb = RedisDb;
-
-        RedisResult result = await redisDb.ScriptEvaluateAsync(
-            RemoveConnectionLuaScript,
-            keys: [connectionKey],
-            values: [TopicKeyPrefix, connectionId, SubscriptionKey]
-        );
-
-        RedisResult[]? topics = (RedisResult[]?)result;
-        if (topics == null)
+        ImmutableHashSet<string> topicsToRemove;
+        lock (_mutationLock)
         {
-            _logger.RemoveConnectionTopicsEmptyWarning(connectionId);
-            return [];
-        }
-
-        IReadOnlyCollection<string> removedTopics = topics.Select(t => t.ToString()).ToList().AsReadOnly();
-        _logger.RemoveConnectionInfo(connectionId, removedTopics);
-        return removedTopics;
-    }
-
-    public virtual async Task SubscribeTopicAsync(string connectionId, string topic)
-    {
-        string connectionKey = ConnectionKeyPrefix + connectionId;
-        string topicKey = TopicKeyPrefix + topic;
-
-        IDatabase redisDb = RedisDb;
-
-        ITransaction transaction = redisDb.CreateTransaction();
-        _ = transaction.SetAddAsync(topicKey, connectionId);
-        _ = transaction.KeyExpireAsync(topicKey, AutoStaleKeyExpiry);
-        _ = transaction.SetAddAsync(connectionKey, topic);
-        _ = transaction.KeyExpireAsync(connectionKey, AutoStaleKeyExpiry);
-        _ = transaction.SetAddAsync(SubscriptionKey, topic);
-
-        bool isExecuted = await transaction.ExecuteAsync();
-        if (!isExecuted)
-        {
-            _logger.SubscribeTopicNotExecutedWarning(connectionId, topic);
-            return;
-        }
-
-        _logger.SubscribeTopicInfo(connectionId, topic);
-    }
-
-    public virtual async Task UnsubscribeTopicAsync(string connectionId, string topic)
-    {
-        string connectionKey = ConnectionKeyPrefix + connectionId;
-        string topicKey = TopicKeyPrefix + topic;
-
-        IDatabase redisDb = RedisDb;
-
-        ITransaction transaction = redisDb.CreateTransaction();
-        _ = transaction.SetRemoveAsync(topicKey, connectionId);
-        _ = transaction.SetRemoveAsync(connectionKey, topic);
-
-        bool isExecuted = await transaction.ExecuteAsync();
-        if (!isExecuted)
-        {
-            _logger.UnsubscribeTopicNotExecutedWarning(connectionId, topic);
-            return;
-        }
-
-        long numSubscribers = await redisDb.SetLengthAsync(topicKey);
-        if (numSubscribers == 0)
-        {
-            bool isRemoved = await redisDb.SetRemoveAsync(SubscriptionKey, topic);
-            if (isRemoved)
+            topicsToRemove = GetSubscriberTopics(subscriberId);
+            foreach (IGrouping<string, string> topicPrefixToRemove in topicsToRemove.GroupBy(t => GetTopicPrefix == null ? t : GetTopicPrefix(t)))
             {
-                _logger.UnsubscribeTopicNoSubscribersRemovedInfo(connectionId, topic);
+                foreach (string topicName in topicPrefixToRemove)
+                {
+                    _ = TopicsByPrefixRemove(subscriberId, topicName, topicPrefixToRemove.Key);
+                }
+            }
+
+            _ = _subscriberTopics.TryRemove(subscriberId, out _);
+        }
+
+        _logger.RemoveSubscriberInfo(subscriberId, topicsToRemove);
+        return topicsToRemove;
+    }
+
+    public virtual bool SubscribeTopic(string subscriberId, string topicName, Func<string, string>? GetTopicPrefix)
+    {
+        string topicPrefix = GetTopicPrefix == null ? topicName : GetTopicPrefix(topicName);
+        if (string.IsNullOrWhiteSpace(topicPrefix))
+        {
+            _logger.SubscribeTopicPrefixNullError(subscriberId, topicName);
+            return false;
+        }
+
+        bool isSubscribed;
+        lock (_mutationLock)
+        {
+            isSubscribed = SubscribeTopic(subscriberId, topicName, topicPrefix);
+        }
+
+        if (isSubscribed)
+        {
+            _logger.SubscribeTopicInfo(subscriberId, topicName);
+        }
+        return isSubscribed;
+    }
+
+    public virtual bool UnsubscribeTopic(string subscriberId, string topicName, Func<string, string>? GetTopicPrefix)
+    {
+        string topicPrefix = GetTopicPrefix == null ? topicName : GetTopicPrefix(topicName);
+        if (string.IsNullOrWhiteSpace(topicPrefix))
+        {
+            _logger.UnsubscribeTopicPrefixNullError(subscriberId, topicName);
+            return false;
+        }
+
+        bool isUnsubscribed;
+        lock (_mutationLock)
+        {
+            isUnsubscribed = UnsubscribeTopic(subscriberId, topicName, topicPrefix);
+        }
+
+        if (isUnsubscribed)
+        {
+            _logger.UnsubscribeTopicInfo(subscriberId, topicName);
+        }
+        return isUnsubscribed;
+    }
+
+    protected virtual bool SubscribeTopic(string subscriberId, string topicName, string topicPrefix)
+    {
+        return SubscriberTopicsAdd(subscriberId, topicName) && TopicsByPrefixAdd(subscriberId, topicName, topicPrefix);
+    }
+
+    protected virtual bool SubscriberTopicsAdd(string subscriberId, string topicName)
+    {
+        _ = _subscriberTopics.TryGetValue(subscriberId, out ImmutableHashSet<string>? subscriberTopics);
+        if (subscriberTopics?.Count >= TopicsPerSubscriberMax)
+        {
+            _logger.SubscribeTopicsAddExceedLimitError(subscriberId, topicName);
+            return false;
+        }
+        if (subscriberTopics?.Contains(topicName) == true)
+        {
+            _logger.SubscribeTopicsAddDuplicateError(subscriberId, topicName);
+            return false;
+        }
+
+        _subscriberTopics[subscriberId] = subscriberTopics == null ? [topicName] : subscriberTopics.Add(topicName);
+        return true;
+    }
+
+    protected virtual bool SubscriberTopicsRemove(string subscriberId, string topicName)
+    {
+        _ = _subscriberTopics.TryGetValue(subscriberId, out ImmutableHashSet<string>? subscriberTopics);
+        if (subscriberTopics?.Contains(topicName) == true)
+        {
+            ImmutableHashSet<string> updatedSubscriberTopics = subscriberTopics.Remove(topicName);
+            if (updatedSubscriberTopics.Count > 0)
+            {
+                _subscriberTopics[subscriberId] = updatedSubscriberTopics;
             }
             else
             {
-                _logger.UnsubscribeTopicNoSubscribersNotRemovedWarning(connectionId, topic);
+                _ = _subscriberTopics.TryRemove(subscriberId, out _);
             }
 
-            return;
+            return true;
         }
 
-        _logger.UnsubscribeTopicInfo(connectionId, topic);
+        return false;
     }
 
-    protected const string RemoveConnectionLuaScript = @"
-        local connectionKey = KEYS[1]
-        local topicKeyPrefix = ARGV[1]
-        local connectionId = ARGV[2]
-        local subscriptionKey = ARGV[3]
+    protected virtual bool TopicsByPrefixAdd(string subscriberId, string topicName, string topicPrefix)
+    {
+        _ = _topicNumSubscribers.TryGetValue(topicName, out int count);
+        _topicNumSubscribers[topicName] = count + 1;
 
-        local topics = redis.call('SMEMBERS', connectionKey)
-        if #topics == 0 then return topics end
+        if (count == 0)
+        {
+            _ = _topicsByPrefix.TryGetValue(topicPrefix, out ImmutableHashSet<string>? topicsByPrefix);
+            _topicsByPrefix[topicPrefix] = topicsByPrefix == null ? [topicName] : topicsByPrefix.Add(topicName);
+        }
 
-        for _, topic in ipairs(topics) do
-            local topicKey = topicKeyPrefix .. topic
-            redis.call('SREM', topicKey, connectionId)
+        return true;
+    }
 
-            local numSubscribers = redis.call('SCARD', topicKey)
-            if numSubscribers == 0 then
-                redis.call('SREM', subscriptionKey, topic)
-            end
-        end
+    protected virtual bool TopicsByPrefixRemove(string subscriberId, string topicName, string topicPrefix)
+    {
+        if (!_topicNumSubscribers.TryGetValue(topicName, out int count) || count <= 0)
+        {
+            return false;
+        }
 
-        redis.call('UNLINK', connectionKey)
-        return topics
-    ";
+        if (count == 1)
+        {
+            if (!_topicNumSubscribers.Remove(topicName))
+            {
+                _logger.TopicsByPrefixRemoveTopicNumSubscribersNotRemovedWarning(subscriberId, topicName, topicPrefix);
+            }
+
+            _ = _topicsByPrefix.TryGetValue(topicPrefix, out ImmutableHashSet<string>? topicsByPrefix);
+            if (topicsByPrefix == null)
+            {
+                _logger.TopicsByPrefixRemoveTopicsByPrefixNullError(subscriberId, topicName, topicPrefix);
+                return false;
+            }
+
+            ImmutableHashSet<string> updatedTopicsByPrefix = topicsByPrefix.Remove(topicName);
+            if (updatedTopicsByPrefix.Count > 0)
+            {
+                _topicsByPrefix[topicPrefix] = updatedTopicsByPrefix;
+            }
+            else if (!_topicsByPrefix.TryRemove(topicPrefix, out _))
+            {
+                _logger.TopicsByPrefixRemoveTopicsByPrefixNotRemovedWarning(subscriberId, topicName, topicPrefix);
+            }
+        }
+        else
+        {
+            _topicNumSubscribers[topicName] = count - 1;
+        }
+
+        return true;
+    }
+
+    protected virtual bool UnsubscribeTopic(string subscriberId, string topicName, string topicPrefix)
+    {
+        return SubscriberTopicsRemove(subscriberId, topicName) && TopicsByPrefixRemove(subscriberId, topicName, topicPrefix);
+    }
 }
 
 public static partial class SignalRTopicSubscriptionServiceLogs
 {
     [LoggerMessage(
-        EventId = 10,
-        Level = LogLevel.Warning,
-        Message = "Remove connection topics empty for {ConnectionId}")]
-    public static partial void RemoveConnectionTopicsEmptyWarning(
-        this ILogger logger, string connectionId);
-
-    [LoggerMessage(
-        EventId = 20,
+        EventId = 1010,
         Level = LogLevel.Information,
-        Message = "Removed connection from all topics for {ConnectionId}: {Topics}")]
-    public static partial void RemoveConnectionInfo(
-        this ILogger logger, string connectionId, IReadOnlyCollection<string> topics);
+        Message = "RemoveSubscriber: removed from all topics for subscriber `{SubscriberId}`: {TopicNames}")]
+    public static partial void RemoveSubscriberInfo(
+        this ILogger logger, string subscriberId, ImmutableHashSet<string> topicNames);
 
     [LoggerMessage(
-        EventId = 30,
-        Level = LogLevel.Warning,
-        Message = "Subscribe topic not executed for topic `{Topic}`: {ConnectionId}")]
-    public static partial void SubscribeTopicNotExecutedWarning(
-        this ILogger logger, string connectionId, string topic);
+        EventId = 2010,
+        Level = LogLevel.Error,
+        Message = "SubscribeTopic: topic prefix null for topic `{TopicName}`: {SubscriberId}")]
+    public static partial void SubscribeTopicPrefixNullError(
+        this ILogger logger, string subscriberId, string topicName);
 
     [LoggerMessage(
-        EventId = 40,
+        EventId = 2020,
         Level = LogLevel.Information,
-        Message = "Subscribed to topic `{Topic}`: {ConnectionId}")]
+        Message = "SubscribeTopic: subscribed for topic `{TopicName}`: {SubscriberId}")]
     public static partial void SubscribeTopicInfo(
-        this ILogger logger, string connectionId, string topic);
+        this ILogger logger, string subscriberId, string topicName);
 
     [LoggerMessage(
-        EventId = 50,
-        Level = LogLevel.Warning,
-        Message = "Unsubscribe topic not executed for topic `{Topic}`: {ConnectionId}")]
-    public static partial void UnsubscribeTopicNotExecutedWarning(
-        this ILogger logger, string connectionId, string topic);
+        EventId = 3010,
+        Level = LogLevel.Error,
+        Message = "UnsubscribeTopic: topic prefix null for topic `{TopicName}`: {SubscriberId}")]
+    public static partial void UnsubscribeTopicPrefixNullError(
+        this ILogger logger, string subscriberId, string topicName);
 
     [LoggerMessage(
-        EventId = 60,
+        EventId = 3020,
         Level = LogLevel.Information,
-        Message = "Unsubscribe topic with no subscribers removed for `{Topic}`: {ConnectionId}")]
-    public static partial void UnsubscribeTopicNoSubscribersRemovedInfo(
-        this ILogger logger, string connectionId, string topic);
-
-    [LoggerMessage(
-        EventId = 70,
-        Level = LogLevel.Warning,
-        Message = "Unsubscribe topic with no subscribers not removed for `{Topic}`: {ConnectionId}")]
-    public static partial void UnsubscribeTopicNoSubscribersNotRemovedWarning(
-        this ILogger logger, string connectionId, string topic);
-
-    [LoggerMessage(
-        EventId = 80,
-        Level = LogLevel.Information,
-        Message = "Unsubscribed from topic `{Topic}`: {ConnectionId}")]
+        Message = "UnsubscribeTopic: unsubscribed for topic `{TopicName}`: {SubscriberId}")]
     public static partial void UnsubscribeTopicInfo(
-        this ILogger logger, string connectionId, string topic);
+        this ILogger logger, string subscriberId, string topicName);
+
+    [LoggerMessage(
+        EventId = 4010,
+        Level = LogLevel.Error,
+        Message = "SubscribeTopicsAdd: exceed subscription limit for topic `{TopicName}`: {SubscriberId}")]
+    public static partial void SubscribeTopicsAddExceedLimitError(
+        this ILogger logger, string subscriberId, string topicName);
+
+    [LoggerMessage(
+        EventId = 4020,
+        Level = LogLevel.Error,
+        Message = "SubscribeTopicsAdd: duplicate for topic `{TopicName}`: {SubscriberId}")]
+    public static partial void SubscribeTopicsAddDuplicateError(
+        this ILogger logger, string subscriberId, string topicName);
+
+    [LoggerMessage(
+        EventId = 5010,
+        Level = LogLevel.Warning,
+        Message = "TopicsByPrefixRemove: topic number of subscribers not removed for topic `{TopicName}` with prefix `{topicPRefix}`: {SubscriberId}")]
+    public static partial void TopicsByPrefixRemoveTopicNumSubscribersNotRemovedWarning(
+        this ILogger logger, string subscriberId, string topicName, string topicPRefix);
+
+    [LoggerMessage(
+        EventId = 5020,
+        Level = LogLevel.Error,
+        Message = "TopicsByPrefixRemove: topics by prefix null for topic `{TopicName}` with prefix `{topicPRefix}`: {SubscriberId}")]
+    public static partial void TopicsByPrefixRemoveTopicsByPrefixNullError(
+        this ILogger logger, string subscriberId, string topicName, string topicPRefix);
+
+    [LoggerMessage(
+        EventId = 5030,
+        Level = LogLevel.Error,
+        Message = "TopicsByPrefixRemove: topics by prefix not removed for topic `{TopicName}` with prefix `{topicPRefix}`: {SubscriberId}")]
+    public static partial void TopicsByPrefixRemoveTopicsByPrefixNotRemovedWarning(
+        this ILogger logger, string subscriberId, string topicName, string topicPRefix);
 }
