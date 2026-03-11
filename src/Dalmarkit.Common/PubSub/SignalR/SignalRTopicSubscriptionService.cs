@@ -9,6 +9,7 @@ public class SignalRTopicSubscriptionService(
 {
     public const int SubscriberTopicsInitialCapacity = 100003;
     public const int TopicsByPrefixInitialCapacity = 8209;
+    public const int TopicsPerSubscriberMax = 300;
 
     private static readonly ImmutableHashSet<string> EmptyHashSet = [];
 
@@ -16,7 +17,7 @@ public class SignalRTopicSubscriptionService(
     private readonly Lock _mutationLock = new();
     private readonly ConcurrentDictionary<string, ImmutableHashSet<string>> _subscriberTopics = new(Environment.ProcessorCount, SubscriberTopicsInitialCapacity, StringComparer.OrdinalIgnoreCase);
 #pragma warning disable IDE0028 // Simplify collection initialization
-    private readonly Dictionary<string, int> _topicNumSubscribers = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _topicNumSubscribers = new(StringComparer.OrdinalIgnoreCase);
 #pragma warning restore IDE0028 // Simplify collection initialization
     private readonly ConcurrentDictionary<string, ImmutableHashSet<string>> _topicsByPrefix = new(Environment.ProcessorCount, TopicsByPrefixInitialCapacity, StringComparer.OrdinalIgnoreCase);
 
@@ -105,6 +106,11 @@ public class SignalRTopicSubscriptionService(
     protected virtual bool SubscriberTopicsAdd(string subscriberId, string topicName)
     {
         _ = _subscriberTopics.TryGetValue(subscriberId, out ImmutableHashSet<string>? subscriberTopics);
+        if (subscriberTopics?.Count >= TopicsPerSubscriberMax)
+        {
+            _logger.SubscribeTopicsAddExceedLimitError(subscriberId, topicName);
+            return false;
+        }
         if (subscriberTopics?.Contains(topicName) == true)
         {
             _logger.SubscribeTopicsAddDuplicateError(subscriberId, topicName);
@@ -198,63 +204,70 @@ public class SignalRTopicSubscriptionService(
 public static partial class SignalRTopicSubscriptionServiceLogs
 {
     [LoggerMessage(
-        EventId = 10,
+        EventId = 1010,
         Level = LogLevel.Information,
         Message = "RemoveSubscriber: removed from all topics for subscriber `{SubscriberId}`: {TopicNames}")]
     public static partial void RemoveSubscriberInfo(
         this ILogger logger, string subscriberId, ImmutableHashSet<string> topicNames);
 
     [LoggerMessage(
-        EventId = 20,
+        EventId = 2010,
         Level = LogLevel.Error,
         Message = "SubscribeTopic: topic prefix null for topic `{TopicName}`: {SubscriberId}")]
     public static partial void SubscribeTopicPrefixNullError(
         this ILogger logger, string subscriberId, string topicName);
 
     [LoggerMessage(
-        EventId = 30,
+        EventId = 2020,
         Level = LogLevel.Information,
         Message = "SubscribeTopic: subscribed for topic `{TopicName}`: {SubscriberId}")]
     public static partial void SubscribeTopicInfo(
         this ILogger logger, string subscriberId, string topicName);
 
     [LoggerMessage(
-        EventId = 40,
+        EventId = 3010,
         Level = LogLevel.Error,
         Message = "UnsubscribeTopic: topic prefix null for topic `{TopicName}`: {SubscriberId}")]
     public static partial void UnsubscribeTopicPrefixNullError(
         this ILogger logger, string subscriberId, string topicName);
 
     [LoggerMessage(
-        EventId = 50,
+        EventId = 3020,
         Level = LogLevel.Information,
         Message = "UnsubscribeTopic: unsubscribed for topic `{TopicName}`: {SubscriberId}")]
     public static partial void UnsubscribeTopicInfo(
         this ILogger logger, string subscriberId, string topicName);
 
     [LoggerMessage(
-        EventId = 60,
+        EventId = 4010,
+        Level = LogLevel.Error,
+        Message = "SubscribeTopicsAdd: exceed subscription limit for topic `{TopicName}`: {SubscriberId}")]
+    public static partial void SubscribeTopicsAddExceedLimitError(
+        this ILogger logger, string subscriberId, string topicName);
+
+    [LoggerMessage(
+        EventId = 4020,
         Level = LogLevel.Error,
         Message = "SubscribeTopicsAdd: duplicate for topic `{TopicName}`: {SubscriberId}")]
     public static partial void SubscribeTopicsAddDuplicateError(
         this ILogger logger, string subscriberId, string topicName);
 
     [LoggerMessage(
-        EventId = 70,
+        EventId = 5010,
         Level = LogLevel.Warning,
         Message = "TopicsByPrefixRemove: topic number of subscribers not removed for topic `{TopicName}` with prefix `{topicPRefix}`: {SubscriberId}")]
     public static partial void TopicsByPrefixRemoveTopicNumSubscribersNotRemovedWarning(
         this ILogger logger, string subscriberId, string topicName, string topicPRefix);
 
     [LoggerMessage(
-        EventId = 80,
+        EventId = 5020,
         Level = LogLevel.Error,
         Message = "TopicsByPrefixRemove: topics by prefix null for topic `{TopicName}` with prefix `{topicPRefix}`: {SubscriberId}")]
     public static partial void TopicsByPrefixRemoveTopicsByPrefixNullError(
         this ILogger logger, string subscriberId, string topicName, string topicPRefix);
 
     [LoggerMessage(
-        EventId = 90,
+        EventId = 5030,
         Level = LogLevel.Error,
         Message = "TopicsByPrefixRemove: topics by prefix not removed for topic `{TopicName}` with prefix `{topicPRefix}`: {SubscriberId}")]
     public static partial void TopicsByPrefixRemoveTopicsByPrefixNotRemovedWarning(
