@@ -474,13 +474,21 @@ public class WebSocketClient : IWebSocketClient
 
             // No need to dispose of tasks https://devblogs.microsoft.com/dotnet/do-i-need-to-dispose-of-tasks/
             _ = Interlocked.Exchange(ref _lastReceivedTimestampMilliseconds, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-            _checkHealthTask = CheckHealthAsync(connectionId, _checkHealthCts.Token);
+            _checkHealthTask = CheckHealthAsync(connectionId, _checkHealthCts.Token).ContinueWith(
+                t => _logger.ConnectInternalCheckHealthTaskException(_options.ServerUrl, connectionId, t.Exception!),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
         }
 
         _receiveMessageCts = CancellationTokenSource.CreateLinkedTokenSource(_disposalCts.Token);
 
         // No need to dispose of tasks https://devblogs.microsoft.com/dotnet/do-i-need-to-dispose-of-tasks/
-        _receiveMessageTask = ReceiveMessagesAsync(connectionId, _receiveMessageCts.Token);
+        _receiveMessageTask = ReceiveMessagesAsync(connectionId, _receiveMessageCts.Token).ContinueWith(
+            t => _logger.ConnectInternalReceiveMessageTaskException(_options.ServerUrl, connectionId, t.Exception!),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
 
         if (ConnectionState == WebSocketConnectionState.Connected && Interlocked.Read(ref _connectionId) == connectionId)
         {
@@ -1546,13 +1554,27 @@ public static partial class WebSocketClientLogs
 
     [LoggerMessage(
         EventId = 5060,
+        Level = LogLevel.Error,
+        Message = "ConnectInternalAsync: check health task exception at WebSocket {SocketUrl} with connection id {ConnectionId}")]
+    public static partial void ConnectInternalCheckHealthTaskException(
+        this ILogger logger, string socketUrl, long connectionId, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5070,
+        Level = LogLevel.Error,
+        Message = "ConnectInternalAsync: receive message task exception at WebSocket {SocketUrl} with connection id {ConnectionId}")]
+    public static partial void ConnectInternalReceiveMessageTaskException(
+        this ILogger logger, string socketUrl, long connectionId, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5080,
         Level = LogLevel.Information,
         Message = "ConnectInternalAsync: dispatch connected event canceled at WebSocket {SocketUrl} with connection id {ConnectionId} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void ConnectInternalDispatchConnectedEventCanceledInfo(
         this ILogger logger, string socketUrl, long connectionId, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 5070,
+        EventId = 5090,
         Level = LogLevel.Error,
         Message = "ConnectInternalAsync: dispatch connected event canceled at WebSocket {SocketUrl} with connection id {ConnectionId} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void ConnectInternalDispatchConnectedEventException(

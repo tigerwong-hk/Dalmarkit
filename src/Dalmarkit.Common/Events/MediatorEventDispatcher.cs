@@ -22,6 +22,7 @@ public class MediatorEventDispatcher(IMediator mediator, ILogger<MediatorEventDi
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.DispatchEventException(message.ToString() ?? string.Empty, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+            throw;
         }
     }
 }

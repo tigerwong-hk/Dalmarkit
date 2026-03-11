@@ -17,11 +17,13 @@ public abstract class SignalRTopicHubBase(ITopicSubscriptionService subscription
     public virtual async Task<ImmutableHashSet<string>> RemoveConnectionAsync()
     {
         ImmutableHashSet<string> topicsRemoved = _subscriptionService.RemoveSubscriber(Context.ConnectionId, GetTopicPrefix);
+        List<Task> removeFromGroupTasks = [];
         foreach (string topic in topicsRemoved)
         {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, topic).ConfigureAwait(false);
+            removeFromGroupTasks.Add(Groups.RemoveFromGroupAsync(Context.ConnectionId, topic));
         }
 
+        await Task.WhenAll(removeFromGroupTasks).ConfigureAwait(false);
         return topicsRemoved;
     }
 
