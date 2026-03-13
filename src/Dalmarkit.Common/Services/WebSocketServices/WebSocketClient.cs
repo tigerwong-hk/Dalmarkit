@@ -339,19 +339,6 @@ public class WebSocketClient : IWebSocketClient
 
         _logger.AttemptReconnectMaxReconnectAttemptsReachedError(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts);
 
-        try
-        {
-            await _eventDispatcher.DispatchEventAsync(new OnMaxReconnectionAttemptsReached(_reconnectAttempts), cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.AttemptReconnectMaxReconnectAttemptsReachedDispatchEventCanceledInfo(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts);
-        }
-        catch (Exception ex)
-        {
-            _logger.AttemptReconnectMaxReconnectAttemptsReachedDispatchEventException(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts, ex);
-        }
-
         if (!TryConnectionStateTransition(WebSocketConnectionState.Reconnecting, WebSocketConnectionState.Disconnected))
         {
             _logger.AttemptReconnectMaxReconnectAttemptsReachedNotReconnectingStateWarning(_options.ServerUrl, ConnectionState, _reconnectAttempts, policy.MaxAttempts);
@@ -369,6 +356,19 @@ public class WebSocketClient : IWebSocketClient
         catch (Exception exception)
         {
             _logger.AttemptReconnectMaxReconnectAttemptsReachedDispatchDisconnectedEventException(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts, exception);
+        }
+
+        try
+        {
+            await _eventDispatcher.DispatchEventAsync(new OnMaxReconnectionAttemptsReached(_reconnectAttempts), cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.AttemptReconnectMaxReconnectAttemptsReachedDispatchEventCanceledInfo(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts);
+        }
+        catch (Exception ex)
+        {
+            _logger.AttemptReconnectMaxReconnectAttemptsReachedDispatchEventException(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts, ex);
         }
     }
 
@@ -580,7 +580,6 @@ public class WebSocketClient : IWebSocketClient
             catch (OperationCanceledException)
             {
                 _logger.ConnectInternalDispatchConnectedEventCanceledInfo(_options.ServerUrl, connectionId, _reconnectAttempts, maxAttempts);
-                throw;
             }
             catch (Exception exception)
             {

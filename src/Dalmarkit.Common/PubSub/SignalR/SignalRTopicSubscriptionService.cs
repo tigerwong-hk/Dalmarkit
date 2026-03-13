@@ -11,7 +11,7 @@ public class SignalRTopicSubscriptionService(
     public const int TopicsByPrefixInitialCapacity = 8209;
     public const int TopicsPerSubscriberMax = 300;
 
-    private static readonly ImmutableHashSet<string> EmptyHashSet = [];
+    private static readonly ImmutableHashSet<string> EmptyHashSet = ImmutableHashSet.Create<string>(StringComparer.OrdinalIgnoreCase);
 
     private readonly ILogger<SignalRTopicSubscriptionService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly Lock _mutationLock = new();
@@ -117,7 +117,9 @@ public class SignalRTopicSubscriptionService(
             return false;
         }
 
-        _subscriberTopics[subscriberId] = subscriberTopics == null ? [topicName] : subscriberTopics.Add(topicName);
+        _subscriberTopics[subscriberId] = subscriberTopics == null
+            ? ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, topicName)
+            : subscriberTopics.Add(topicName);
         return true;
     }
 
@@ -150,7 +152,7 @@ public class SignalRTopicSubscriptionService(
         if (count == 0)
         {
             _ = _topicsByPrefix.TryGetValue(topicPrefix, out ImmutableHashSet<string>? topicsByPrefix);
-            _topicsByPrefix[topicPrefix] = topicsByPrefix == null ? [topicName] : topicsByPrefix.Add(topicName);
+            _topicsByPrefix[topicPrefix] = topicsByPrefix == null ? ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, topicName) : topicsByPrefix.Add(topicName);
         }
 
         return true;
