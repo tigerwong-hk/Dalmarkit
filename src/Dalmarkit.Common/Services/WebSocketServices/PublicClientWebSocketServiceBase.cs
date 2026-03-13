@@ -3,6 +3,7 @@ using Mediator;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using static Dalmarkit.Common.Services.WebSocketServices.IWebSocketClient;
 
 namespace Dalmarkit.Common.Services.WebSocketServices;
 
@@ -10,7 +11,9 @@ public abstract class PublicClientWebSocketServiceBase(
     IWebSocketClient webSocketClient,
     ILogger<PublicClientWebSocketServiceBase> logger) : IPublicClientWebSocketService,
         INotificationHandler<WebSocketClientEvents.OnWebSocketConnected>,
-        INotificationHandler<WebSocketClientEvents.OnWebSocketDisconnected>
+        INotificationHandler<WebSocketClientEvents.OnWebSocketConnecting>,
+        INotificationHandler<WebSocketClientEvents.OnWebSocketDisconnected>,
+        INotificationHandler<WebSocketClientEvents.OnWebSocketDisconnecting>
 {
     public const int GracefulShutdownTimeoutMilliseconds = 10000;
     public const int SubscribedChannelMessageDefaultCapacity = 8192;
@@ -66,6 +69,8 @@ public abstract class PublicClientWebSocketServiceBase(
 
     public virtual async ValueTask Handle(WebSocketClientEvents.OnWebSocketConnected notification, CancellationToken cancellationToken = default)
     {
+        await NotifyWebSocketConnectionState(WebSocketConnectionState.Connected);
+
         try
         {
             await _receiveSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -121,10 +126,22 @@ public abstract class PublicClientWebSocketServiceBase(
         }
     }
 
+    public virtual async ValueTask Handle(WebSocketClientEvents.OnWebSocketConnecting notification, CancellationToken cancellationToken = default)
+    {
+        await NotifyWebSocketConnectionState(WebSocketConnectionState.Connecting);
+    }
+
     public virtual async ValueTask Handle(WebSocketClientEvents.OnWebSocketDisconnected notification, CancellationToken cancellationToken = default)
     {
+        await NotifyWebSocketConnectionState(WebSocketConnectionState.Disconnected);
+
         _ = Interlocked.Exchange(ref _hasSubscribedOnConnected, 0);
         await ShutdownReceiveTextMessageTaskAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public virtual async ValueTask Handle(WebSocketClientEvents.OnWebSocketDisconnecting notification, CancellationToken cancellationToken = default)
+    {
+        await NotifyWebSocketConnectionState(WebSocketConnectionState.Disconnecting);
     }
 
     public virtual async Task ConnectAsync(CancellationToken cancellationToken = default)
@@ -526,6 +543,8 @@ public abstract class PublicClientWebSocketServiceBase(
 
         return [.. channelsNotUnsubscribed];
     }
+
+    protected abstract Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState);
 
     protected abstract Task<bool> ProcessServerNotificationAsync(string message, CancellationToken cancellationToken = default);
 

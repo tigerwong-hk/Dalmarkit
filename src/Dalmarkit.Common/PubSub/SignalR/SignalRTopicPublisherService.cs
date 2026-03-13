@@ -13,14 +13,14 @@ public class SignalRTopicPublisherService(
     {
         if (string.IsNullOrWhiteSpace(topic))
         {
-            _logger.PublishToAllTopicNull();
-            return;
+            _logger.PublishToAllTopicNullError();
+            throw new ArgumentException("missing topic");
         }
 
         if (string.IsNullOrWhiteSpace(method))
         {
-            _logger.PublishToAllMethodNull(topic);
-            return;
+            _logger.PublishToAllMethodNullError(topic);
+            throw new ArgumentException("missing method");
         }
 
         TopicMessage<TPayload> message = new()
@@ -39,6 +39,7 @@ public class SignalRTopicPublisherService(
         catch (Exception ex)
         {
             _logger.PublishToAllException(topic, method, ex);
+            throw;
         }
     }
 
@@ -46,14 +47,14 @@ public class SignalRTopicPublisherService(
     {
         if (string.IsNullOrWhiteSpace(topic))
         {
-            _logger.PublishToTopicTopicNull();
-            return;
+            _logger.PublishToTopicTopicNullError();
+            throw new ArgumentException("missing topic");
         }
 
         if (string.IsNullOrWhiteSpace(method))
         {
-            _logger.PublishToTopicMethodNull(topic);
-            return;
+            _logger.PublishToTopicMethodNullError(topic);
+            throw new ArgumentException("missing method");
         }
 
         TopicMessage<TPayload> message = new()
@@ -72,6 +73,7 @@ public class SignalRTopicPublisherService(
         catch (Exception ex)
         {
             _logger.PublishToTopicException(topic, method, ex);
+            throw;
         }
     }
 }
@@ -79,58 +81,58 @@ public class SignalRTopicPublisherService(
 public static partial class SignalRTopicPublisherServiceLogs
 {
     [LoggerMessage(
-        EventId = 10,
+        EventId = 1010,
         Level = LogLevel.Error,
         Message = "PublishToAll: topic null")]
-    public static partial void PublishToAllTopicNull(
+    public static partial void PublishToAllTopicNullError(
         this ILogger logger);
 
     [LoggerMessage(
-        EventId = 20,
+        EventId = 1020,
         Level = LogLevel.Error,
         Message = "PublishToAll: method null for topic `{Topic}`")]
-    public static partial void PublishToAllMethodNull(
+    public static partial void PublishToAllMethodNullError(
         this ILogger logger, string topic);
 
     [LoggerMessage(
-        EventId = 30,
+        EventId = 1030,
         Level = LogLevel.Debug,
         Message = "PublishToAll: topic `{Topic}` with method `{Method}`")]
     public static partial void PublishToAllDebug(
         this ILogger logger, string topic, string method);
 
     [LoggerMessage(
-        EventId = 40,
+        EventId = 1040,
         Level = LogLevel.Error,
         Message = "PublishToAll: exception for topic `{Topic}` with method `{Method}`")]
     public static partial void PublishToAllException(
         this ILogger logger, string topic, string method, Exception exception);
 
     [LoggerMessage(
-        EventId = 50,
+        EventId = 2010,
         Level = LogLevel.Error,
         Message = "PublishToTopic: topic null")]
-    public static partial void PublishToTopicTopicNull(
+    public static partial void PublishToTopicTopicNullError(
         this ILogger logger);
 
     [LoggerMessage(
-        EventId = 60,
+        EventId = 2020,
         Level = LogLevel.Error,
         Message = "PublishToTopic: method null for topic `{Topic}`")]
-    public static partial void PublishToTopicMethodNull(
+    public static partial void PublishToTopicMethodNullError(
         this ILogger logger, string topic);
 
     [LoggerMessage(
-        EventId = 70,
+        EventId = 2030,
         Level = LogLevel.Debug,
         Message = "PublishToTopic: topic `{Topic}` with method `{Method}`")]
     public static partial void PublishToTopicDebug(
         this ILogger logger, string topic, string method);
 
     [LoggerMessage(
-        EventId = 80,
+        EventId = 2040,
         Level = LogLevel.Error,
-        Message = "PublishToTopic: subscribers empty for topic `{Topic}` with method `{Method}`")]
+        Message = "PublishToTopic: exception for topic `{Topic}` with method `{Method}`")]
     public static partial void PublishToTopicException(
         this ILogger logger, string topic, string method, Exception exception);
 }
