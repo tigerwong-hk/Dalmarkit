@@ -3,6 +3,7 @@ using Mediator;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using static Dalmarkit.Common.Services.WebSocketServices.IWebSocketClient;
 
 namespace Dalmarkit.Common.Services.WebSocketServices;
 
@@ -10,7 +11,9 @@ public abstract class PublicClientWebSocketServiceBase(
     IWebSocketClient webSocketClient,
     ILogger<PublicClientWebSocketServiceBase> logger) : IPublicClientWebSocketService,
         INotificationHandler<WebSocketClientEvents.OnWebSocketConnected>,
-        INotificationHandler<WebSocketClientEvents.OnWebSocketDisconnected>
+        INotificationHandler<WebSocketClientEvents.OnWebSocketConnecting>,
+        INotificationHandler<WebSocketClientEvents.OnWebSocketDisconnected>,
+        INotificationHandler<WebSocketClientEvents.OnWebSocketDisconnecting>
 {
     public const int GracefulShutdownTimeoutMilliseconds = 10000;
     public const int SubscribedChannelMessageDefaultCapacity = 8192;
@@ -68,6 +71,19 @@ public abstract class PublicClientWebSocketServiceBase(
     {
         try
         {
+            await NotifyWebSocketConnectionState(WebSocketConnectionState.Connected);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.HandleOnWebSocketConnectedNotifyConnectedConnectionStateCanceledInfo();
+        }
+        catch (Exception ex)
+        {
+            _logger.HandleOnWebSocketConnectedNotifyConnectedConnectionStateException(ex);
+        }
+
+        try
+        {
             await _receiveSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -121,10 +137,57 @@ public abstract class PublicClientWebSocketServiceBase(
         }
     }
 
+    public virtual async ValueTask Handle(WebSocketClientEvents.OnWebSocketConnecting notification, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await NotifyWebSocketConnectionState(WebSocketConnectionState.Connecting);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.HandleOnWebSocketConnectingNotifyConnectingConnectionStateCanceledInfo();
+        }
+        catch (Exception ex)
+        {
+            _logger.HandleOnWebSocketConnectingNotifyConnectingConnectionStateException(ex);
+        }
+
+    }
+
     public virtual async ValueTask Handle(WebSocketClientEvents.OnWebSocketDisconnected notification, CancellationToken cancellationToken = default)
     {
+        try
+        {
+            await NotifyWebSocketConnectionState(WebSocketConnectionState.Disconnected);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.HandleOnWebSocketDisconnectedNotifyDisconnectedConnectionStateCanceledInfo();
+        }
+        catch (Exception ex)
+        {
+            _logger.HandleOnWebSocketDisconnectedNotifyDisconnectedConnectionStateException(ex);
+        }
+
         _ = Interlocked.Exchange(ref _hasSubscribedOnConnected, 0);
         await ShutdownReceiveTextMessageTaskAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public virtual async ValueTask Handle(WebSocketClientEvents.OnWebSocketDisconnecting notification, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await NotifyWebSocketConnectionState(WebSocketConnectionState.Disconnecting);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.HandleOnWebSocketDisconnectingNotifyDisconnectingConnectionStateCanceledInfo();
+        }
+        catch (Exception ex)
+        {
+            _logger.HandleOnWebSocketDisconnectingNotifyDisconnectingConnectionStateException(ex);
+        }
+
     }
 
     public virtual async Task ConnectAsync(CancellationToken cancellationToken = default)
@@ -527,6 +590,8 @@ public abstract class PublicClientWebSocketServiceBase(
         return [.. channelsNotUnsubscribed];
     }
 
+    protected abstract Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState);
+
     protected abstract Task<bool> ProcessServerNotificationAsync(string message, CancellationToken cancellationToken = default);
 
     protected abstract bool ReceiveChannelNotificationTaskStart(string channelName, Channel<WebSocketReceivedMessage<string>> receiveChannel);
@@ -573,16 +638,72 @@ public static partial class PublicClientWebSocketServiceBaseLogs
     [LoggerMessage(
         EventId = 40,
         Level = LogLevel.Information,
+        Message = "HandleOnWebSocketConnected: notify connected connection state canceled")]
+    public static partial void HandleOnWebSocketConnectedNotifyConnectedConnectionStateCanceledInfo(
+        this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 42,
+        Level = LogLevel.Error,
+        Message = "HandleOnWebSocketConnected: notify connected connection state exception")]
+    public static partial void HandleOnWebSocketConnectedNotifyConnectedConnectionStateException(
+        this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 44,
+        Level = LogLevel.Information,
         Message = "Subscribe on connected semaphore canceled")]
     public static partial void SubscribeOnConnectedSemaphoreCanceledInfo(
         this ILogger logger);
 
     [LoggerMessage(
-        EventId = 50,
+        EventId = 46,
         Level = LogLevel.Error,
         Message = "Subscribe on connected exception for channels `{ChannelNames}` with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void SubscribeOnConnectedException(
         this ILogger logger, List<string> channelNames, string exceptionMessage, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 50,
+        Level = LogLevel.Information,
+        Message = "HandleOnWebSocketConnecting: notify connecting connection state canceled")]
+    public static partial void HandleOnWebSocketConnectingNotifyConnectingConnectionStateCanceledInfo(
+        this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 52,
+        Level = LogLevel.Error,
+        Message = "HandleOnWebSocketConnecting: notify connecting connection state exception")]
+    public static partial void HandleOnWebSocketConnectingNotifyConnectingConnectionStateException(
+        this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 54,
+        Level = LogLevel.Information,
+        Message = "HandleOnWebSocketDisconnected: notify disconnected connection state canceled")]
+    public static partial void HandleOnWebSocketDisconnectedNotifyDisconnectedConnectionStateCanceledInfo(
+        this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 56,
+        Level = LogLevel.Error,
+        Message = "HandleOnWebSocketDisconnected: notify disconnected connection state exception")]
+    public static partial void HandleOnWebSocketDisconnectedNotifyDisconnectedConnectionStateException(
+        this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 58,
+        Level = LogLevel.Information,
+        Message = "HandleOnWebSocketDisconnecting: notify disconnecting connection state canceled")]
+    public static partial void HandleOnWebSocketDisconnectingNotifyDisconnectingConnectionStateCanceledInfo(
+        this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 59,
+        Level = LogLevel.Error,
+        Message = "HandleOnWebSocketDisconnecting: notify disconnecting connection state exception")]
+    public static partial void HandleOnWebSocketDisconnectingNotifyDisconnectingConnectionStateException(
+        this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 60,

@@ -160,17 +160,72 @@ public class WebSocketClient : IWebSocketClient
             throw new InvalidOperationException("WebSocket is not disconnected");
         }
 
+        try
+        {
+            await _eventDispatcher.DispatchEventAsync(new OnWebSocketConnecting(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.ConnectDispatchConnectingEventCanceledInfo(_options.ServerUrl, ConnectionState);
+        }
+        catch (Exception ex)
+        {
+            _logger.ConnectDispatchConnectingEventException(_options.ServerUrl, ConnectionState, ex);
+        }
+
         _getWebSocketServerUrl = getWebSocketServerUrl;
 
         try
         {
             await ConnectInternalAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
         {
+            _logger.ConnectInternalCanceledInfo(_options.ServerUrl, ConnectionState);
+
+
             if (!TryConnectionStateTransition(WebSocketConnectionState.Connecting, WebSocketConnectionState.Disconnected))
             {
-                _logger.ConnectNotConnectingStateWarning(_options.ServerUrl, ConnectionState, ex);
+                _logger.ConnectInternalCanceledNotConnectingStateWarning(_options.ServerUrl, ConnectionState);
+                throw;
+            }
+
+            try
+            {
+                await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected("connect canceled"), CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.ConnectInternalCanceledDispatchDisconnectedEventCanceledInfo(_options.ServerUrl, ConnectionState);
+            }
+            catch (Exception exception)
+            {
+                _logger.ConnectInternalCanceledDispatchDisconnectedEventException(_options.ServerUrl, ConnectionState, exception);
+            }
+
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.ConnectInternalException(_options.ServerUrl, ConnectionState, ex);
+
+            if (!TryConnectionStateTransition(WebSocketConnectionState.Connecting, WebSocketConnectionState.Disconnected))
+            {
+                _logger.ConnectInternalExceptionNotConnectingStateWarning(_options.ServerUrl, ConnectionState);
+                throw;
+            }
+
+            try
+            {
+                await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected($"connect error: {ex.Message}"), CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.ConnectInternalExceptionDispatchDisconnectedEventCanceledInfo(_options.ServerUrl, ConnectionState);
+            }
+            catch (Exception exception)
+            {
+                _logger.ConnectInternalExceptionDispatchDisconnectedEventException(_options.ServerUrl, ConnectionState, exception);
             }
 
             throw;
@@ -231,7 +286,6 @@ public class WebSocketClient : IWebSocketClient
             catch (OperationCanceledException)
             {
                 _logger.AttemptReconnectNotDisconnectedDispatchCanceledInfo(_options.ServerUrl);
-                throw;
             }
             catch (Exception ex)
             {
@@ -259,6 +313,20 @@ public class WebSocketClient : IWebSocketClient
                 if (!TryConnectionStateTransition(WebSocketConnectionState.Reconnecting, WebSocketConnectionState.Disconnected))
                 {
                     _logger.AttemptReconnectConnectCanceledNotReconnectingStateWarning(_options.ServerUrl, ConnectionState, reconnectAttempts, policy.MaxAttempts);
+                    throw;
+                }
+
+                try
+                {
+                    await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected("reconnecting canceled"), CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.AttemptReconnectConnectCanceledDispatchDisconnectedEventCanceledInfo(_options.ServerUrl, reconnectAttempts, policy.MaxAttempts);
+                }
+                catch (Exception exception)
+                {
+                    _logger.AttemptReconnectConnectCanceledDispatchDisconnectedEventException(_options.ServerUrl, reconnectAttempts, policy.MaxAttempts, exception);
                 }
 
                 throw;
@@ -271,11 +339,6 @@ public class WebSocketClient : IWebSocketClient
 
         _logger.AttemptReconnectMaxReconnectAttemptsReachedError(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts);
 
-        if (!TryConnectionStateTransition(WebSocketConnectionState.Reconnecting, WebSocketConnectionState.Disconnected))
-        {
-            _logger.AttemptReconnectMaxReconnectAttemptsReachedNotReconnectingStateWarning(_options.ServerUrl, ConnectionState, _reconnectAttempts, policy.MaxAttempts);
-        }
-
         try
         {
             await _eventDispatcher.DispatchEventAsync(new OnMaxReconnectionAttemptsReached(_reconnectAttempts), cancellationToken).ConfigureAwait(false);
@@ -283,11 +346,29 @@ public class WebSocketClient : IWebSocketClient
         catch (OperationCanceledException)
         {
             _logger.AttemptReconnectMaxReconnectAttemptsReachedDispatchEventCanceledInfo(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts);
-            throw;
         }
         catch (Exception ex)
         {
             _logger.AttemptReconnectMaxReconnectAttemptsReachedDispatchEventException(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts, ex);
+        }
+
+        if (!TryConnectionStateTransition(WebSocketConnectionState.Reconnecting, WebSocketConnectionState.Disconnected))
+        {
+            _logger.AttemptReconnectMaxReconnectAttemptsReachedNotReconnectingStateWarning(_options.ServerUrl, ConnectionState, _reconnectAttempts, policy.MaxAttempts);
+            return;
+        }
+
+        try
+        {
+            await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected("max reconnection attempts reached"), cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.AttemptReconnectMaxReconnectAttemptsReachedDispatchDisconnectedEventCanceledInfo(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts);
+        }
+        catch (Exception exception)
+        {
+            _logger.AttemptReconnectMaxReconnectAttemptsReachedDispatchDisconnectedEventException(_options.ServerUrl, _reconnectAttempts, policy.MaxAttempts, exception);
         }
     }
 
@@ -390,7 +471,7 @@ public class WebSocketClient : IWebSocketClient
 
             try
             {
-                await _eventDispatcher.DispatchEventAsync(new OnHealthCheckFailure(ex), cancellationToken).ConfigureAwait(false);
+                await _eventDispatcher.DispatchEventAsync(new OnHealthCheckFailure(ex), CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -530,6 +611,19 @@ public class WebSocketClient : IWebSocketClient
 
         try
         {
+            await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnecting(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.DisconnectInternalDispatchDisconnectingEventCanceledInfo(_options.ServerUrl, connectionId, closeStatus, statusDescription);
+        }
+        catch (Exception ex)
+        {
+            _logger.DisconnectInternalDispatchDisconnectingEventException(_options.ServerUrl, connectionId, closeStatus, statusDescription, ex);
+        }
+
+        try
+        {
             if (shutdownCheckHealthTask)
             {
                 await ShutdownCheckHealthTaskAsync(cancellationToken).ConfigureAwait(false);
@@ -554,8 +648,6 @@ public class WebSocketClient : IWebSocketClient
                 _logger.DisconnectInternalDisconnectingFromWebSocketInfo(_options.ServerUrl, connectionId, closeStatus, statusDescription);
                 await clientWebSocket.CloseAsync(closeStatus, statusDescription, disconnectTimeoutCts.Token).ConfigureAwait(false);
                 _logger.DisconnectInternalDisconnectedFromWebSocketInfo(_options.ServerUrl, connectionId, closeStatus, statusDescription);
-
-                await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected(statusDescription ?? string.Empty), cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -578,7 +670,22 @@ public class WebSocketClient : IWebSocketClient
             _clientWebSocket = null;
             if (!TryConnectionStateTransition(WebSocketConnectionState.Disconnecting, WebSocketConnectionState.Disconnected))
             {
-                _logger.DisconnectInternalExceptionNotDisconnectingStateWarning(_options.ServerUrl, ConnectionState, connectionId, closeStatus, statusDescription);
+                _logger.DisconnectInternalFinallyNotDisconnectingStateWarning(_options.ServerUrl, ConnectionState, connectionId, closeStatus, statusDescription);
+            }
+            else
+            {
+                try
+                {
+                    await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected(statusDescription ?? string.Empty), CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.DisconnectInternalFinallyDispatchDisconnectedEventCanceledInfo(_options.ServerUrl, connectionId, closeStatus, statusDescription);
+                }
+                catch (Exception ex)
+                {
+                    _logger.DisconnectInternalFinallyDispatchDisconnectedEventException(_options.ServerUrl, connectionId, closeStatus, statusDescription, ex);
+                }
             }
         }
     }
@@ -628,11 +735,22 @@ public class WebSocketClient : IWebSocketClient
 
         try
         {
+            await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnecting(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.HandleDisconnectionDispatchDisconnectingEventCanceledInfo(_options.ServerUrl, connectionId, statusDescription);
+        }
+        catch (Exception ex)
+        {
+            _logger.HandleDisconnectionDispatchDisconnectingEventException(_options.ServerUrl, connectionId, statusDescription, ex);
+        }
+
+        try
+        {
             await ShutdownCheckHealthTaskAsync(cancellationToken).ConfigureAwait(false);
 
             PendingRequestCleanup(new WebSocketException("Connection lost"));
-
-            await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected(statusDescription ?? string.Empty), cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -648,7 +766,22 @@ public class WebSocketClient : IWebSocketClient
             _clientWebSocket = null;
             if (!TryConnectionStateTransition(WebSocketConnectionState.Disconnecting, WebSocketConnectionState.Disconnected))
             {
-                _logger.HandleDisconnectionNotDisconnectingStateWarning(_options.ServerUrl, ConnectionState, connectionId, statusDescription);
+                _logger.HandleDisconnectionFinallyNotDisconnectingStateWarning(_options.ServerUrl, ConnectionState, connectionId, statusDescription);
+            }
+            else
+            {
+                try
+                {
+                    await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected(statusDescription ?? string.Empty), CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.HandleDisconnectionFinallyDispatchDisconnectedEventCanceledInfo(_options.ServerUrl, connectionId, statusDescription);
+                }
+                catch (Exception ex)
+                {
+                    _logger.HandleDisconnectionFinallyDispatchDisconnectedEventException(_options.ServerUrl, connectionId, statusDescription, ex);
+                }
             }
         }
 
@@ -794,7 +927,7 @@ public class WebSocketClient : IWebSocketClient
 
                     try
                     {
-                        await _eventDispatcher.DispatchEventAsync(new OnWriteReceiveTextChannelFailure(ex), cancellationToken).ConfigureAwait(false);
+                        await _eventDispatcher.DispatchEventAsync(new OnWriteReceiveTextChannelFailure(ex), CancellationToken.None).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -829,7 +962,7 @@ public class WebSocketClient : IWebSocketClient
 
                     try
                     {
-                        await _eventDispatcher.DispatchEventAsync(new OnWriteReceiveBinaryChannelFailure(ex), cancellationToken).ConfigureAwait(false);
+                        await _eventDispatcher.DispatchEventAsync(new OnWriteReceiveBinaryChannelFailure(ex), CancellationToken.None).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -848,7 +981,7 @@ public class WebSocketClient : IWebSocketClient
 
             try
             {
-                await _eventDispatcher.DispatchEventAsync(new OnProcessReceivedMessageFailure(ex), cancellationToken).ConfigureAwait(false);
+                await _eventDispatcher.DispatchEventAsync(new OnProcessReceivedMessageFailure(ex), CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -958,7 +1091,7 @@ public class WebSocketClient : IWebSocketClient
 
             try
             {
-                await _eventDispatcher.DispatchEventAsync(new OnReceiveFailure(ex), cancellationToken).ConfigureAwait(false);
+                await _eventDispatcher.DispatchEventAsync(new OnReceiveFailure(ex), CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1130,7 +1263,7 @@ public class WebSocketClient : IWebSocketClient
 
             try
             {
-                await _eventDispatcher.DispatchEventAsync(new OnShutdownCheckHealthTaskTimeout(), cancellationToken).ConfigureAwait(false);
+                await _eventDispatcher.DispatchEventAsync(new OnShutdownCheckHealthTaskTimeout(), CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1147,7 +1280,7 @@ public class WebSocketClient : IWebSocketClient
 
             try
             {
-                await _eventDispatcher.DispatchEventAsync(new OnShutdownCheckHealthTaskFailure(ex), cancellationToken).ConfigureAwait(false);
+                await _eventDispatcher.DispatchEventAsync(new OnShutdownCheckHealthTaskFailure(ex), CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1192,7 +1325,7 @@ public class WebSocketClient : IWebSocketClient
 
             try
             {
-                await _eventDispatcher.DispatchEventAsync(new OnShutdownReceiveMessageTaskTimeout(), cancellationToken).ConfigureAwait(false);
+                await _eventDispatcher.DispatchEventAsync(new OnShutdownReceiveMessageTaskTimeout(), CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1209,7 +1342,7 @@ public class WebSocketClient : IWebSocketClient
 
             try
             {
-                await _eventDispatcher.DispatchEventAsync(new OnShutdownReceiveMessageTaskFailure(ex), cancellationToken).ConfigureAwait(false);
+                await _eventDispatcher.DispatchEventAsync(new OnShutdownReceiveMessageTaskFailure(ex), CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1274,9 +1407,72 @@ public static partial class WebSocketClientLogs
 
     [LoggerMessage(
         EventId = 1020,
+        Level = LogLevel.Information,
+        Message = "ConnectAsync: dispatch connecting event canceled at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectDispatchConnectingEventCanceledInfo(
+        this ILogger logger, string socketUrl, WebSocketConnectionState connectionState);
+
+    [LoggerMessage(
+        EventId = 1030,
+        Level = LogLevel.Error,
+        Message = "ConnectAsync: dispatch connecting event exception at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectDispatchConnectingEventException(
+        this ILogger logger, string socketUrl, WebSocketConnectionState connectionState, Exception exception);
+
+    [LoggerMessage(
+        EventId = 1040,
+        Level = LogLevel.Information,
+        Message = "ConnectAsync: internal canceled at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectInternalCanceledInfo(
+        this ILogger logger, string socketUrl, WebSocketConnectionState connectionState);
+
+    [LoggerMessage(
+        EventId = 1050,
         Level = LogLevel.Warning,
-        Message = "ConnectAsync: not connecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
-    public static partial void ConnectNotConnectingStateWarning(
+        Message = "ConnectAsync: internal canceled not connecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectInternalCanceledNotConnectingStateWarning(
+        this ILogger logger, string socketUrl, WebSocketConnectionState connectionState);
+
+    [LoggerMessage(
+        EventId = 1060,
+        Level = LogLevel.Information,
+        Message = "ConnectAsync: internal canceled dispatch disconnected event canceled at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectInternalCanceledDispatchDisconnectedEventCanceledInfo(
+        this ILogger logger, string socketUrl, WebSocketConnectionState connectionState);
+
+    [LoggerMessage(
+        EventId = 1070,
+        Level = LogLevel.Information,
+        Message = "ConnectAsync: internal canceled dispatch disconnected event exception at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectInternalCanceledDispatchDisconnectedEventException(
+        this ILogger logger, string socketUrl, WebSocketConnectionState connectionState, Exception exception);
+
+    [LoggerMessage(
+        EventId = 1080,
+        Level = LogLevel.Information,
+        Message = "ConnectAsync: internal exception at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectInternalException(
+        this ILogger logger, string socketUrl, WebSocketConnectionState connectionState, Exception exception);
+
+    [LoggerMessage(
+        EventId = 1090,
+        Level = LogLevel.Warning,
+        Message = "ConnectAsync: internal exception not connecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectInternalExceptionNotConnectingStateWarning(
+        this ILogger logger, string socketUrl, WebSocketConnectionState connectionState);
+
+    [LoggerMessage(
+        EventId = 1100,
+        Level = LogLevel.Information,
+        Message = "ConnectAsync: dispatch disconnected event canceled at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectInternalExceptionDispatchDisconnectedEventCanceledInfo(
+        this ILogger logger, string socketUrl, WebSocketConnectionState connectionState);
+
+    [LoggerMessage(
+        EventId = 1110,
+        Level = LogLevel.Error,
+        Message = "ConnectAsync: dispatch disconnected event exception at WebSocket {SocketUrl} with connection state `{ConnectionState}`")]
+    public static partial void ConnectInternalExceptionDispatchDisconnectedEventException(
         this ILogger logger, string socketUrl, WebSocketConnectionState connectionState, Exception exception);
 
     [LoggerMessage(
@@ -1345,61 +1541,89 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 3080,
         Level = LogLevel.Information,
+        Message = "AttemptReconnectAsync: connect canceled dispatch disconnected event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
+    public static partial void AttemptReconnectConnectCanceledDispatchDisconnectedEventCanceledInfo(
+        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
+
+    [LoggerMessage(
+        EventId = 3090,
+        Level = LogLevel.Error,
+        Message = "AttemptReconnectAsync: connect canceled dispatch disconnected event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
+    public static partial void AttemptReconnectConnectCanceledDispatchDisconnectedEventException(
+        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
+
+    [LoggerMessage(
+        EventId = 3100,
+        Level = LogLevel.Information,
         Message = "AttemptReconnectAsync: connect canceled dispatch event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectCanceledDispatchEventCanceledInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3090,
+        EventId = 3110,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: connect canceled dispatch event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectCanceledDispatchEventException(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
 
     [LoggerMessage(
-        EventId = 3100,
+        EventId = 3120,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: connect exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectException(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
 
     [LoggerMessage(
-        EventId = 3110,
+        EventId = 3130,
         Level = LogLevel.Information,
         Message = "AttemptReconnectAsync: connect exception dispatch event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectExceptionDispatchEventCanceledInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3120,
+        EventId = 3140,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: connect exception dispatch event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectExceptionDispatchEventException(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
 
     [LoggerMessage(
-        EventId = 3130,
+        EventId = 3150,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: max reconnect attempts reached at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedError(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3140,
+        EventId = 3160,
         Level = LogLevel.Warning,
         Message = "AttemptReconnectAsync: max reconnect attempts reached not reconnecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}` on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedNotReconnectingStateWarning(
         this ILogger logger, string socketUrl, WebSocketConnectionState connectionState, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3150,
+        EventId = 3170,
+        Level = LogLevel.Information,
+        Message = "AttemptReconnectAsync: max reconnect attempts reached dispatch disconnected event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
+    public static partial void AttemptReconnectMaxReconnectAttemptsReachedDispatchDisconnectedEventCanceledInfo(
+        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
+
+    [LoggerMessage(
+        EventId = 3180,
+        Level = LogLevel.Error,
+        Message = "AttemptReconnectAsync: max reconnect attempts reached dispatch disconnected event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
+    public static partial void AttemptReconnectMaxReconnectAttemptsReachedDispatchDisconnectedEventException(
+        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
+
+    [LoggerMessage(
+        EventId = 3190,
         Level = LogLevel.Information,
         Message = "AttemptReconnectAsync: max reconnect attempts reached dispatch event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedDispatchEventCanceledInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3160,
+        EventId = 3200,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: max reconnect attempts reached dispatch event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedDispatchEventException(
@@ -1604,44 +1828,72 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 6040,
         Level = LogLevel.Information,
+        Message = "DisconnectInternalAsync: dispatch disconnecting event canceled at {SocketUrl} for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
+    public static partial void DisconnectInternalDispatchDisconnectingEventCanceledInfo(
+        this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription);
+
+    [LoggerMessage(
+        EventId = 6050,
+        Level = LogLevel.Error,
+        Message = "DisconnectInternalAsync: dispatch disconnecting event exception at {SocketUrl} for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
+    public static partial void DisconnectInternalDispatchDisconnectingEventException(
+        this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription, Exception exception);
+
+    [LoggerMessage(
+        EventId = 6060,
+        Level = LogLevel.Information,
         Message = "DisconnectInternalAsync: disconnecting from WebSocket at {SocketUrl} for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
     public static partial void DisconnectInternalDisconnectingFromWebSocketInfo(
         this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription);
 
     [LoggerMessage(
-        EventId = 6050,
+        EventId = 6070,
         Level = LogLevel.Information,
         Message = "DisconnectInternalAsync: disconnected WebSocket at {SocketUrl} for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
     public static partial void DisconnectInternalDisconnectedFromWebSocketInfo(
         this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription);
 
     [LoggerMessage(
-        EventId = 6060,
+        EventId = 6080,
         Level = LogLevel.Warning,
         Message = "DisconnectInternalAsync: unconnected WebSocket at {SocketUrl} for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
     public static partial void DisconnectInternalUnconnectedWebSocketWarning(
         this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription);
 
     [LoggerMessage(
-        EventId = 6070,
+        EventId = 6090,
         Level = LogLevel.Information,
         Message = "DisconnectInternalAsync: disconnect canceled at WebSocket {SocketUrl} for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
     public static partial void DisconnectInternalCanceledInfo(
         this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription);
 
     [LoggerMessage(
-        EventId = 6080,
+        EventId = 6100,
         Level = LogLevel.Error,
         Message = "DisconnectInternalAsync: disconnect exception at WebSocket {SocketUrl} for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
     public static partial void DisconnectInternalException(
         this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription, Exception exception);
 
     [LoggerMessage(
-        EventId = 6090,
+        EventId = 6110,
         Level = LogLevel.Warning,
-        Message = "DisconnectInternalAsync: disconnect exception not disconnecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}` for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
-    public static partial void DisconnectInternalExceptionNotDisconnectingStateWarning(
+        Message = "DisconnectInternalAsync: disconnect finally not disconnecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}` for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
+    public static partial void DisconnectInternalFinallyNotDisconnectingStateWarning(
         this ILogger logger, string socketUrl, WebSocketConnectionState connectionState, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription);
+
+    [LoggerMessage(
+        EventId = 6120,
+        Level = LogLevel.Information,
+        Message = "DisconnectInternalAsync: disconnect finally dispatch disconnected event canceled at WebSocket {SocketUrl} for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
+    public static partial void DisconnectInternalFinallyDispatchDisconnectedEventCanceledInfo(
+        this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription);
+
+    [LoggerMessage(
+        EventId = 6130,
+        Level = LogLevel.Error,
+        Message = "DisconnectInternalAsync: disconnect finally dispatch disconnected event exception at WebSocket {SocketUrl} for connection id {ConnectionId}, close status {CloseStatus} and status description `{StatusDescription}`")]
+    public static partial void DisconnectInternalFinallyDispatchDisconnectedEventException(
+        this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus closeStatus, string? statusDescription, Exception exception);
 
     [LoggerMessage(
         EventId = 7010,
@@ -1681,33 +1933,61 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 8050,
         Level = LogLevel.Information,
+        Message = "HandleDisconnectionAsync: dispatch disconnecting event canceled at WebSocket {SocketUrl}  for connection id {ConnectionId} with status description `{StatusDescription}`")]
+    public static partial void HandleDisconnectionDispatchDisconnectingEventCanceledInfo(
+        this ILogger logger, string socketUrl, long connectionId, string? statusDescription);
+
+    [LoggerMessage(
+        EventId = 8060,
+        Level = LogLevel.Error,
+        Message = "HandleDisconnectionAsync: dispatch disconnecting event exception at WebSocket {SocketUrl} for connection id {ConnectionId} with status description `{StatusDescription}`")]
+    public static partial void HandleDisconnectionDispatchDisconnectingEventException(
+        this ILogger logger, string socketUrl, long connectionId, string? statusDescription, Exception exception);
+
+    [LoggerMessage(
+        EventId = 8070,
+        Level = LogLevel.Information,
         Message = "HandleDisconnectionAsync: canceled at WebSocket {SocketUrl} for connection id {ConnectionId} with status description `{StatusDescription}`")]
     public static partial void HandleDisconnectionCanceledInfo(
         this ILogger logger, string socketUrl, long connectionId, string? statusDescription);
 
     [LoggerMessage(
-        EventId = 8060,
+        EventId = 8080,
         Level = LogLevel.Error,
         Message = "HandleDisconnectionAsync: exception at WebSocket {SocketUrl} for connection id {ConnectionId} with status description `{StatusDescription}`")]
     public static partial void HandleDisconnectionException(
         this ILogger logger, string socketUrl, long connectionId, string? statusDescription, Exception exception);
 
     [LoggerMessage(
-        EventId = 8070,
+        EventId = 8090,
         Level = LogLevel.Warning,
-        Message = "HandleDisconnectionAsync: not disconnecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}` for connection id {ConnectionId} with status description `{StatusDescription}`")]
-    public static partial void HandleDisconnectionNotDisconnectingStateWarning(
+        Message = "HandleDisconnectionAsync: finally not disconnecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}` for connection id {ConnectionId} with status description `{StatusDescription}`")]
+    public static partial void HandleDisconnectionFinallyNotDisconnectingStateWarning(
         this ILogger logger, string socketUrl, WebSocketConnectionState connectionState, long connectionId, string? statusDescription);
 
     [LoggerMessage(
-        EventId = 8080,
+        EventId = 8100,
+        Level = LogLevel.Information,
+        Message = "HandleDisconnectionAsync: finally dispatch disconnected event canceled at WebSocket {SocketUrl} for connection id {ConnectionId} with status description `{StatusDescription}`")]
+    public static partial void HandleDisconnectionFinallyDispatchDisconnectedEventCanceledInfo(
+        this ILogger logger, string socketUrl, long connectionId, string? statusDescription);
+
+    [LoggerMessage(
+        EventId = 8110,
+        Level = LogLevel.Error,
+        Message = "HandleDisconnectionAsync: finally dispatch disconnected event exception at WebSocket {SocketUrl} for connection id {ConnectionId} with status description `{StatusDescription}`")]
+    public static partial void HandleDisconnectionFinallyDispatchDisconnectedEventException(
+        this ILogger logger, string socketUrl, long connectionId, string? statusDescription, Exception exception);
+
+    [LoggerMessage(
+        EventId = 8120,
         Level = LogLevel.Information,
         Message = "HandleDisconnectionAsync: attempt reconnect canceled at WebSocket {SocketUrl} for connection id {ConnectionId} with status description `{StatusDescription}`")]
     public static partial void HandleDisconnectionAttemptReconnectCanceledInfo(
         this ILogger logger, string socketUrl, long connectionId, string? statusDescription);
 
     [LoggerMessage(
-        EventId = 8090,
+        EventId = 8130,
         Level = LogLevel.Error,
         Message = "HandleDisconnectionAsync: attempt reconnect exception at WebSocket {SocketUrl} for connection id {ConnectionId} with status description `{StatusDescription}`")]
     public static partial void HandleDisconnectionAttemptReconnectException(
