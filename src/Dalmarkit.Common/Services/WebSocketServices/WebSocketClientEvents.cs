@@ -18,7 +18,9 @@ public static class WebSocketClientEvents
     public record OnShutdownReceiveMessageTaskTimeout() : INotification;
     public record OnShutdownReceiveMessageTaskFailure(Exception Failure) : INotification;
     public record OnWebSocketConnected() : INotification;
+    public record OnWebSocketConnecting() : INotification;
     public record OnWebSocketDisconnected(string Status) : INotification;
+    public record OnWebSocketDisconnecting() : INotification;
     public record OnWriteReceiveBinaryChannelFailure(Exception Failure) : INotification;
     public record OnWriteReceiveTextChannelFailure(Exception Failure) : INotification;
 }
