@@ -616,7 +616,6 @@ public class WebSocketClient : IWebSocketClient
         catch (OperationCanceledException)
         {
             _logger.DisconnectInternalDispatchDisconnectingEventCanceledInfo(_options.ServerUrl, connectionId, closeStatus, statusDescription);
-            throw;
         }
         catch (Exception ex)
         {
@@ -752,8 +751,6 @@ public class WebSocketClient : IWebSocketClient
             await ShutdownCheckHealthTaskAsync(cancellationToken).ConfigureAwait(false);
 
             PendingRequestCleanup(new WebSocketException("Connection lost"));
-
-            await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected(statusDescription ?? string.Empty), cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
