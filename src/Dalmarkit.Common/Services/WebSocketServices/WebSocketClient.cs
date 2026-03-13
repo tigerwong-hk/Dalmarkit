@@ -676,7 +676,7 @@ public class WebSocketClient : IWebSocketClient
             {
                 try
                 {
-                    await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected(statusDescription ?? string.Empty), cancellationToken).ConfigureAwait(false);
+                    await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected(statusDescription ?? string.Empty), CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -772,7 +772,7 @@ public class WebSocketClient : IWebSocketClient
             {
                 try
                 {
-                    await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected(statusDescription ?? string.Empty), cancellationToken).ConfigureAwait(false);
+                    await _eventDispatcher.DispatchEventAsync(new OnWebSocketDisconnected(statusDescription ?? string.Empty), CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
