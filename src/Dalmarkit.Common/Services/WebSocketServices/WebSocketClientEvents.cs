@@ -8,7 +8,7 @@ public static class WebSocketClientEvents
     public record OnHealthCheckFailure(Exception Failure) : INotification;
     public record OnMaxReconnectionAttemptsReached(int Attempts) : INotification;
     public record OnNoServerHeartbeatReceived(long LastReceivedTimestampMilliseconds) : INotification;
-    public record OnProcessJsonRpc2ResponseFailure(Exception Failure) : INotification;
+    public record OnProcessResponseFailure(Exception Failure) : INotification;
     public record OnProcessReceivedMessageFailure(Exception Failure) : INotification;
     public record OnReceiveFailure(Exception Failure) : INotification;
     public record OnReceiveCanceled() : INotification;
