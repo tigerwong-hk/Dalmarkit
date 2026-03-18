@@ -1,16 +1,15 @@
 using Amazon.Lambda;
 using Amazon.Lambda.Model;
-using AutoMapper;
+using Dalmarkit.Cloud.Aws.Mappers;
 using Dalmarkit.Common.Services;
 using Dalmarkit.Common.Validation;
 using System.Net;
 
 namespace Dalmarkit.Cloud.Aws.Services;
 
-public class AwsLambdaService(AmazonLambdaClient lambdaClient, IMapper mapper) : IAwsLambdaService
+public class AwsLambdaService(AmazonLambdaClient lambdaClient) : IAwsLambdaService
 {
     private readonly AmazonLambdaClient _lambdaClient = Guard.NotNull(lambdaClient, nameof(lambdaClient));
-    private readonly IMapper _mapper = Guard.NotNull(mapper, nameof(mapper));
 
     public static string GetCronScheduleExpression(string cronExpression)
     {
@@ -130,7 +129,7 @@ public class AwsLambdaService(AmazonLambdaClient lambdaClient, IMapper mapper) :
                 $"Error status for GetFunction({functionName}) request: {response.HttpStatusCode}",
                 null,
                 response.HttpStatusCode)
-            : _mapper.Map<FunctionConfig>(response.Configuration);
+            : FunctionConfigMapper.ToTarget(response.Configuration);
     }
 
     public async Task<List<FunctionConfig>> ListFunctionsAsync()
@@ -141,7 +140,7 @@ public class AwsLambdaService(AmazonLambdaClient lambdaClient, IMapper mapper) :
             _lambdaClient.Paginators.ListFunctions(new ListFunctionsRequest());
         await foreach (FunctionConfiguration function in functionsPaginator.Functions)
         {
-            FunctionConfig functionConfig = _mapper.Map<FunctionConfig>(function);
+            FunctionConfig functionConfig = FunctionConfigMapper.ToTarget(function);
             functionList.Add(functionConfig);
         }
 

@@ -29,7 +29,7 @@ public class WebSocketClient : IWebSocketClient
     private readonly SemaphoreSlim _sendSemaphore = new(1, 1);
 
     private readonly Channel<WebSocketReceivedMessage<ReadOnlyMemory<byte>>> _receiveBinaryChannel;
-    private readonly Channel<WebSocketReceivedMessage<string>> _receiveTextChannel;
+    private readonly Channel<WebSocketReceivedMessage<JsonNode>> _receiveTextChannel;
 
     private static readonly HashSet<(WebSocketConnectionState From, WebSocketConnectionState To)> ValidConnectionStateTransitions =
     [
@@ -66,7 +66,7 @@ public class WebSocketClient : IWebSocketClient
     public bool HasReachedMaxReconnectAttempts => _reconnectAttempts >= (_options.Reconnection?.MaxAttempts ?? 0);
 
     public ChannelReader<WebSocketReceivedMessage<ReadOnlyMemory<byte>>> BinaryMessageReader => _receiveBinaryChannel.Reader;
-    public ChannelReader<WebSocketReceivedMessage<string>> TextMessageReader => _receiveTextChannel.Reader;
+    public ChannelReader<WebSocketReceivedMessage<JsonNode>> TextMessageReader => _receiveTextChannel.Reader;
 
     public WebSocketConnectionState ConnectionState => (WebSocketConnectionState)Volatile.Read(ref _connectionStateValue);
 
@@ -99,7 +99,7 @@ public class WebSocketClient : IWebSocketClient
                 SingleWriter = true,
                 AllowSynchronousContinuations = false
             },
-            void (WebSocketReceivedMessage<string> dropped) => _logger.ReceivedTextMessageDroppedWarning(_options.ServerUrl, dropped.ReceivedAt, dropped.Data));
+            void (WebSocketReceivedMessage<JsonNode> dropped) => _logger.ReceivedTextMessageDroppedWarning(_options.ServerUrl, dropped.ReceivedAt, dropped.Data.ToJsonString(JsonWebOptions)));
     }
 
     public void Dispose()
@@ -239,29 +239,35 @@ public class WebSocketClient : IWebSocketClient
         await DisconnectInternalAsync(Interlocked.Read(ref _connectionId), WebSocketCloseStatus.NormalClosure, "User initiated", true, true, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task SendJsonRpc2NotificationAsync<TMessage>(TMessage messageObject, CancellationToken cancellationToken = default)
+    public async Task<TResponse?> SendJsonRpc2RequestAsync<TParams, TResponse>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
+        where TResponse : class
+    {
+        return await SendRequestAsync<JsonRpc2RequestDto<TParams>, TResponse>(request.Id, request, cancellationToken);
+    }
+
+    public async Task SendNotificationAsync<TMessage>(TMessage messageObject, CancellationToken cancellationToken = default)
     {
         await SendTextMessageAsync(messageObject, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<TResponse?> SendJsonRpc2RequestAsync<TParams, TResponse>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
+    public async Task<TResponse?> SendRequestAsync<TRequest, TResponse>(string requestId, TRequest request, CancellationToken cancellationToken = default)
         where TResponse : class
     {
-        string responseJson = await SendAndWaitForJsonRpc2Response(request, cancellationToken).ConfigureAwait(false);
+        string responseJson = await SendRequestAndWaitForResponse(requestId, request, cancellationToken).ConfigureAwait(false);
 
         try
         {
             TResponse? response = JsonSerializer.Deserialize<TResponse>(responseJson, JsonWebOptions);
             if (response == null)
             {
-                _logger.SendJsonRpc2RequestDeserializeResponseNullError(_options.ServerUrl, request.Id, request.Method, responseJson);
+                _logger.SendRequestDeserializeResponseNullError(_options.ServerUrl, requestId, responseJson);
             }
 
             return response;
         }
         catch (Exception ex)
         {
-            _logger.SendJsonRpc2RequestDeserializeResponseException(_options.ServerUrl, request.Id, request.Method, responseJson, ex);
+            _logger.SendRequestDeserializeResponseException(_options.ServerUrl, requestId, responseJson, ex);
             throw;
         }
     }
@@ -706,6 +712,11 @@ public class WebSocketClient : IWebSocketClient
         _logger.DrainReceiveChannelsInfo(_options.ServerUrl, totalTextDrained, totalBinaryDrained);
     }
 
+    protected virtual string? GetRequestIdFromResponse(JsonNode jsonNode)
+    {
+        return (string?)jsonNode["id"];
+    }
+
     protected virtual async Task HandleDisconnectionAsync(long connectionId, string? statusDescription, CancellationToken cancellationToken = default)
     {
         _logger.HandleDisconnectionInfo(_options.ServerUrl, connectionId, statusDescription);
@@ -813,31 +824,31 @@ public class WebSocketClient : IWebSocketClient
         }
     }
 
-    protected virtual void ProcessJsonRpc2Response(string requestId, string textResponse)
+    protected virtual void ProcessResponse(string requestId, string textResponse)
     {
         if (string.IsNullOrWhiteSpace(requestId))
         {
-            _logger.ProcessJsonRpc2ResponseRequestIdMissingError(_options.ServerUrl, textResponse);
+            _logger.ProcessResponseRequestIdMissingError(_options.ServerUrl, textResponse);
             return;
         }
 
         bool isFound = _pendingRequests.TryRemove(requestId, out TaskCompletionSource<string>? tcs);
         if (!isFound)
         {
-            _logger.ProcessJsonRpc2ResponsePendingRequestNotFoundWarning(_options.ServerUrl, requestId, textResponse);
+            _logger.ProcessResponsePendingRequestNotFoundWarning(_options.ServerUrl, requestId, textResponse);
             return;
         }
 
         if (tcs == null)
         {
-            _logger.ProcessJsonRpc2ResponseTaskCompletionSourceNullWarning(_options.ServerUrl, requestId, textResponse);
+            _logger.ProcessResponseTaskCompletionSourceNullWarning(_options.ServerUrl, requestId, textResponse);
             return;
         }
 
         bool isSuccessful = tcs.TrySetResult(textResponse);
         if (!isSuccessful)
         {
-            _logger.ProcessJsonRpc2ResponseSetResultError(_options.ServerUrl, requestId, textResponse);
+            _logger.ProcessResponseSetResultError(_options.ServerUrl, requestId, textResponse);
         }
     }
 
@@ -873,41 +884,37 @@ public class WebSocketClient : IWebSocketClient
                     return;
                 }
 
-                string? jsonrpc = (string?)messageJson["jsonrpc"];
-                if (!string.IsNullOrWhiteSpace(jsonrpc) && jsonrpc.Equals("2.0", StringComparison.Ordinal))
+                string? requestId = GetRequestIdFromResponse(messageJson);
+                if (!string.IsNullOrWhiteSpace(requestId))
                 {
-                    string? id = (string?)messageJson["id"];
-                    if (!string.IsNullOrWhiteSpace(id))
+                    try
                     {
+                        ProcessResponse(requestId, textMessage);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.ProcessReceivedMessageProcessResponseException(_options.ServerUrl, requestId, textMessage, ex);
+
                         try
                         {
-                            ProcessJsonRpc2Response(id, textMessage);
+                            await _eventDispatcher.DispatchEventAsync(new OnProcessResponseFailure(ex), cancellationToken).ConfigureAwait(false);
                         }
-                        catch (Exception ex)
+                        catch (OperationCanceledException)
                         {
-                            _logger.ProcessReceivedMessageProcessJsonRpc2ResponseException(_options.ServerUrl, id, textMessage, ex);
-
-                            try
-                            {
-                                await _eventDispatcher.DispatchEventAsync(new OnProcessJsonRpc2ResponseFailure(ex), cancellationToken).ConfigureAwait(false);
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                _logger.ProcessReceivedMessageDispatchProcessResponseFailureEventCanceledInfo(_options.ServerUrl, id, textMessage);
-                            }
-                            catch (Exception exception)
-                            {
-                                _logger.ProcessReceivedMessageDispatchProcessResponseFailureEventException(_options.ServerUrl, id, textMessage, exception);
-                            }
+                            _logger.ProcessReceivedMessageDispatchProcessResponseFailureEventCanceledInfo(_options.ServerUrl, requestId, textMessage);
                         }
-
-                        return;
+                        catch (Exception exception)
+                        {
+                            _logger.ProcessReceivedMessageDispatchProcessResponseFailureEventException(_options.ServerUrl, requestId, textMessage, exception);
+                        }
                     }
+
+                    return;
                 }
 
-                WebSocketReceivedMessage<string> channelMessage = new()
+                WebSocketReceivedMessage<JsonNode> channelMessage = new()
                 {
-                    Data = textMessage,
+                    Data = messageJson,
                     ReceivedAt = DateTimeOffset.UtcNow
                 };
 
@@ -1109,11 +1116,11 @@ public class WebSocketClient : IWebSocketClient
         }
     }
 
-    protected virtual async Task<string> SendAndWaitForJsonRpc2Response<TParams>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
+    protected virtual async Task<string> SendRequestAndWaitForResponse<TRequest>(string requestId, TRequest request, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
 
-        _logger.SendAndWaitForJsonRpc2ResponseInfo(_options.ServerUrl, request.Method, request.Id);
+        _logger.SendRequestAndWaitForResponseInfo(_options.ServerUrl, requestId);
 
         using CancellationTokenSource responseTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         TaskCompletionSource<string> responseTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1121,16 +1128,16 @@ public class WebSocketClient : IWebSocketClient
         bool isAdded = false;
         try
         {
-            isAdded = _pendingRequests.TryAdd(request.Id, responseTcs);
+            isAdded = _pendingRequests.TryAdd(requestId, responseTcs);
         }
         catch (Exception ex)
         {
-            _logger.SendAndWaitForJsonRpc2ResponseAddPendingRequestException(_options.ServerUrl, request.Method, request.Id, ex);
+            _logger.SendRequestAndWaitForResponseAddPendingRequestException(_options.ServerUrl, requestId, ex);
         }
 
         if (!isAdded)
         {
-            _logger.SendAndWaitForJsonRpc2ResponsePendingRequestNotAddedError(_options.ServerUrl, request.Method, request.Id);
+            _logger.SendRequestAndWaitForResponsePendingRequestNotAddedError(_options.ServerUrl, requestId);
             throw new ArgumentException("Duplicate request id", nameof(request));
         }
 
@@ -1147,17 +1154,17 @@ public class WebSocketClient : IWebSocketClient
         }
         catch (OperationCanceledException)
         {
-            _logger.SendAndWaitForJsonRpc2ResponseCanceledInfo(_options.ServerUrl, request.Method, request.Id);
+            _logger.SendRequestAndWaitForResponseCanceledInfo(_options.ServerUrl, requestId);
             throw;
         }
         catch (Exception ex)
         {
-            _logger.SendAndWaitForJsonRpc2ResponseException(_options.ServerUrl, request.Id, request.Method, ex);
+            _logger.SendRequestAndWaitForResponseException(_options.ServerUrl, requestId, ex);
             throw;
         }
         finally
         {
-            _ = _pendingRequests.TryRemove(request.Id, out _);
+            _ = _pendingRequests.TryRemove(requestId, out _);
         }
     }
 
@@ -1477,16 +1484,16 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 2010,
         Level = LogLevel.Error,
-        Message = "SendJsonRpc2RequestAsync: JSON-RPC 2.0 deserialize response null at WebSocket {SocketUrl} with request id `{RequestId}`, method `{Method}` and response `{Response}`")]
-    public static partial void SendJsonRpc2RequestDeserializeResponseNullError(
-        this ILogger logger, string socketUrl, string requestId, string method, string response);
+        Message = "SendRequestAsync: deserialize response null at WebSocket {SocketUrl} with request id `{RequestId}` and response `{Response}`")]
+    public static partial void SendRequestDeserializeResponseNullError(
+        this ILogger logger, string socketUrl, string requestId, string response);
 
     [LoggerMessage(
         EventId = 2020,
         Level = LogLevel.Error,
-        Message = "SendJsonRpc2RequestAsync: JSON-RPC 2.0 deserialize response exception at WebSocket {SocketUrl} with request id `{RequestId}`, method `{Method}` and response `{Response}`")]
-    public static partial void SendJsonRpc2RequestDeserializeResponseException(
-        this ILogger logger, string socketUrl, string requestId, string method, string response, Exception exception);
+        Message = "SendRequestAsync: deserialize response exception at WebSocket {SocketUrl} with request id `{RequestId}` and response `{Response}`")]
+    public static partial void SendRequestDeserializeResponseException(
+        this ILogger logger, string socketUrl, string requestId, string response, Exception exception);
 
     [LoggerMessage(
         EventId = 3010,
@@ -1995,29 +2002,29 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 9010,
         Level = LogLevel.Error,
-        Message = "ProcessJsonRpc2Response: request ID missing at WebSocket {SocketUrl} for response `{TextResponse}`")]
-    public static partial void ProcessJsonRpc2ResponseRequestIdMissingError(
+        Message = "ProcessResponse: request ID missing at WebSocket {SocketUrl} for response `{TextResponse}`")]
+    public static partial void ProcessResponseRequestIdMissingError(
         this ILogger logger, string socketUrl, string textResponse);
 
     [LoggerMessage(
         EventId = 9020,
         Level = LogLevel.Warning,
-        Message = "ProcessJsonRpc2Response: pending request not found at WebSocket {SocketUrl} with request id {RequestId}) for response `{TextResponse}`")]
-    public static partial void ProcessJsonRpc2ResponsePendingRequestNotFoundWarning(
+        Message = "ProcessResponse: pending request not found at WebSocket {SocketUrl} with request id {RequestId}) for response `{TextResponse}`")]
+    public static partial void ProcessResponsePendingRequestNotFoundWarning(
         this ILogger logger, string socketUrl, string requestId, string textResponse);
 
     [LoggerMessage(
         EventId = 9030,
         Level = LogLevel.Warning,
-        Message = "ProcessJsonRpc2Response: task completion source null at WebSocket {SocketUrl} with request id {RequestId}) for response `{TextResponse}`")]
-    public static partial void ProcessJsonRpc2ResponseTaskCompletionSourceNullWarning(
+        Message = "ProcessResponse: task completion source null at WebSocket {SocketUrl} with request id {RequestId}) for response `{TextResponse}`")]
+    public static partial void ProcessResponseTaskCompletionSourceNullWarning(
         this ILogger logger, string socketUrl, string requestId, string textResponse);
 
     [LoggerMessage(
         EventId = 9040,
         Level = LogLevel.Error,
-        Message = "ProcessJsonRpc2Response: set result error at WebSocket {SocketUrl} with request id {RequestId}) for response `{TextResponse}`")]
-    public static partial void ProcessJsonRpc2ResponseSetResultError(
+        Message = "ProcessResponse: set result error at WebSocket {SocketUrl} with request id {RequestId}) for response `{TextResponse}`")]
+    public static partial void ProcessResponseSetResultError(
         this ILogger logger, string socketUrl, string requestId, string textResponse);
 
     [LoggerMessage(
@@ -2052,7 +2059,7 @@ public static partial class WebSocketClientLogs
         EventId = 10050,
         Level = LogLevel.Error,
         Message = "ProcessReceivedMessage: process JSON-RPC 2.0 response exception at WebSocket {SocketUrl} for request id {RequestId} and text message `{TextMessage}`")]
-    public static partial void ProcessReceivedMessageProcessJsonRpc2ResponseException(
+    public static partial void ProcessReceivedMessageProcessResponseException(
         this ILogger logger, string socketUrl, string requestId, string textMessage, Exception exception);
 
     [LoggerMessage(
@@ -2233,37 +2240,37 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 12010,
         Level = LogLevel.Information,
-        Message = "SendAndWaitForJsonRpc2Response: WebSocket {SocketUrl} for method `{RequestMethod}` and request id {RequestId})")]
-    public static partial void SendAndWaitForJsonRpc2ResponseInfo(
-        this ILogger logger, string socketUrl, string requestMethod, string requestId);
+        Message = "SendRequestAndWaitForResponse: WebSocket {SocketUrl} for request id {RequestId})")]
+    public static partial void SendRequestAndWaitForResponseInfo(
+        this ILogger logger, string socketUrl, string requestId);
 
     [LoggerMessage(
         EventId = 12020,
         Level = LogLevel.Error,
-        Message = "SendAndWaitForJsonRpc2Response: add pending request exception at WebSocket {SocketUrl} for method `{RequestMethod}` and request id {RequestId})")]
-    public static partial void SendAndWaitForJsonRpc2ResponseAddPendingRequestException(
-        this ILogger logger, string socketUrl, string requestMethod, string requestId, Exception exception);
+        Message = "SendRequestAndWaitForResponse: add pending request exception at WebSocket {SocketUrl} for request id {RequestId})")]
+    public static partial void SendRequestAndWaitForResponseAddPendingRequestException(
+        this ILogger logger, string socketUrl, string requestId, Exception exception);
 
     [LoggerMessage(
         EventId = 12030,
         Level = LogLevel.Error,
-        Message = "SendAndWaitForJsonRpc2Response: pending request not added at WebSocket {SocketUrl} for method `{RequestMethod}` and request id {RequestId}")]
-    public static partial void SendAndWaitForJsonRpc2ResponsePendingRequestNotAddedError(
-        this ILogger logger, string socketUrl, string requestMethod, string requestId);
+        Message = "SendRequestAndWaitForResponse: pending request not added at WebSocket {SocketUrl} for request id {RequestId}")]
+    public static partial void SendRequestAndWaitForResponsePendingRequestNotAddedError(
+        this ILogger logger, string socketUrl, string requestId);
 
     [LoggerMessage(
         EventId = 12040,
         Level = LogLevel.Information,
-        Message = "SendAndWaitForJsonRpc2Response: canceled at WebSocket {SocketUrl} for method `{RequestMethod}` and request id {RequestId}")]
-    public static partial void SendAndWaitForJsonRpc2ResponseCanceledInfo(
-        this ILogger logger, string socketUrl, string requestMethod, string requestId);
+        Message = "SendRequestAndWaitForResponse: canceled at WebSocket {SocketUrl} for request id {RequestId}")]
+    public static partial void SendRequestAndWaitForResponseCanceledInfo(
+        this ILogger logger, string socketUrl, string requestId);
 
     [LoggerMessage(
         EventId = 12050,
         Level = LogLevel.Error,
-        Message = "SendAndWaitForJsonRpc2Response: exception at WebSocket {SocketUrl} for method `{RequestMethod}` and request id {RequestId}")]
-    public static partial void SendAndWaitForJsonRpc2ResponseException(
-        this ILogger logger, string socketUrl, string requestMethod, string requestId, Exception exception);
+        Message = "SendRequestAndWaitForResponse: exception at WebSocket {SocketUrl} for request id {RequestId}")]
+    public static partial void SendRequestAndWaitForResponseException(
+        this ILogger logger, string socketUrl, string requestId, Exception exception);
 
     [LoggerMessage(
         EventId = 13010,

@@ -1,5 +1,6 @@
-using System.Threading.Channels;
 using Dalmarkit.Common.Dtos.RequestDtos;
+using System.Text.Json.Nodes;
+using System.Threading.Channels;
 
 namespace Dalmarkit.Common.Services.WebSocketServices;
 
@@ -10,13 +11,15 @@ public interface IWebSocketClient : IDisposable
     WebSocketConnectionState ConnectionState { get; }
 
     ChannelReader<WebSocketReceivedMessage<ReadOnlyMemory<byte>>> BinaryMessageReader { get; }
-    ChannelReader<WebSocketReceivedMessage<string>> TextMessageReader { get; }
+    ChannelReader<WebSocketReceivedMessage<JsonNode>> TextMessageReader { get; }
 
     Task ConnectAsync(CancellationToken cancellationToken = default);
     Task ConnectAsync(Func<string>? getWebSocketServerUrl, CancellationToken cancellationToken = default);
     Task DisconnectAsync(CancellationToken cancellationToken = default);
-    Task SendJsonRpc2NotificationAsync<TMessage>(TMessage messageObject, CancellationToken cancellationToken = default);
     Task<TResponse?> SendJsonRpc2RequestAsync<TParams, TResponse>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
+        where TResponse : class;
+    Task SendNotificationAsync<TMessage>(TMessage messageObject, CancellationToken cancellationToken = default);
+    Task<TResponse?> SendRequestAsync<TRequest, TResponse>(string requestId, TRequest request, CancellationToken cancellationToken = default)
         where TResponse : class;
 
     enum WebSocketConnectionState

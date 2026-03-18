@@ -2,6 +2,7 @@ using Dalmarkit.Common.Dtos.RequestDtos;
 using Mediator;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using static Dalmarkit.Common.Services.WebSocketServices.IWebSocketClient;
 
@@ -24,7 +25,7 @@ public abstract class PublicClientWebSocketServiceBase(
     private readonly ILogger<PublicClientWebSocketServiceBase> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     private readonly ConcurrentDictionary<string, string> _subscribedChannels = new(Environment.ProcessorCount, SubscribedChannelsInitialCapacity);
-    private readonly ConcurrentDictionary<string, Channel<WebSocketReceivedMessage<string>>> _notificationMessageTypes = new(Environment.ProcessorCount, SubscribedChannelsInitialCapacity);
+    private readonly ConcurrentDictionary<string, Channel<WebSocketReceivedMessage<JsonNode>>> _notificationMessageTypes = new(Environment.ProcessorCount, SubscribedChannelsInitialCapacity);
 
     private int _hasSubscribedOnConnected;
     private bool HasSubscribedOnConnected => Volatile.Read(ref _hasSubscribedOnConnected) != 0;
@@ -202,7 +203,7 @@ public abstract class PublicClientWebSocketServiceBase(
 
     public virtual async Task SendNotificationAsync<TMessage>(TMessage message, CancellationToken cancellationToken = default)
     {
-        await _webSocketClient.SendJsonRpc2NotificationAsync(message, cancellationToken).ConfigureAwait(false);
+        await _webSocketClient.SendNotificationAsync(message, cancellationToken).ConfigureAwait(false);
     }
 
     public virtual async Task<TResponse?> SendRequestAsync<TParams, TResponse>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
@@ -211,21 +212,21 @@ public abstract class PublicClientWebSocketServiceBase(
         return await _webSocketClient.SendJsonRpc2RequestAsync<TParams, TResponse>(request, cancellationToken).ConfigureAwait(false);
     }
 
-    protected virtual async Task ReceiveTextMessagesAsync(ChannelReader<WebSocketReceivedMessage<string>> channelReader, Func<string, Task<bool>> processReceiveTextMessage, CancellationToken cancellationToken = default)
+    protected virtual async Task ReceiveTextMessagesAsync(ChannelReader<WebSocketReceivedMessage<JsonNode>> channelReader, Func<JsonNode, Task<bool>> processReceiveTextMessage, CancellationToken cancellationToken = default)
     {
         try
         {
             while (await channelReader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                while (channelReader.TryRead(out WebSocketReceivedMessage<string> receivedTextMessage))
+                while (channelReader.TryRead(out WebSocketReceivedMessage<JsonNode> receivedTextMessage))
                 {
-                    _logger.ReceivedTextMessageDebug(receivedTextMessage.Data);
-
-                    if (string.IsNullOrWhiteSpace(receivedTextMessage.Data))
+                    if (receivedTextMessage.Data == null)
                     {
-                        _logger.ReceivedNullOrWhitespaceTextMessageWarning(receivedTextMessage.ReceivedAt.ToString("u"));
+                        _logger.ReceivedNullTextMessageWarning(receivedTextMessage.ReceivedAt.ToString("u"));
                         continue;
                     }
+
+                    _logger.ReceivedTextMessageDebug(receivedTextMessage.Data.ToJsonString(WebSocketClient.JsonWebOptions));
 
                     try
                     {
@@ -238,7 +239,7 @@ public abstract class PublicClientWebSocketServiceBase(
                     }
                     catch (Exception ex)
                     {
-                        _logger.ProcessServerNotificationException(receivedTextMessage.ReceivedAt.ToString("u"), receivedTextMessage.Data, ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                        _logger.ProcessServerNotificationException(receivedTextMessage.ReceivedAt.ToString("u"), receivedTextMessage.Data.ToJsonString(WebSocketClient.JsonWebOptions), ex.Message, ex.InnerException?.Message, ex.StackTrace);
                     }
                 }
             }
@@ -280,7 +281,7 @@ public abstract class PublicClientWebSocketServiceBase(
                 continue;
             }
 
-            bool isMessageTypeRemoved = _notificationMessageTypes.TryRemove(notificationMessageType, out Channel<WebSocketReceivedMessage<string>>? messageChannel);
+            bool isMessageTypeRemoved = _notificationMessageTypes.TryRemove(notificationMessageType, out Channel<WebSocketReceivedMessage<JsonNode>>? messageChannel);
             if (!isMessageTypeRemoved)
             {
                 _logger.RemoveChannelsNotificationMessageTypeNotRemovedError(channelName, notificationMessageType);
@@ -352,7 +353,7 @@ public abstract class PublicClientWebSocketServiceBase(
         }
     }
 
-    protected virtual async Task<Dictionary<SubscriptionChannel, Channel<WebSocketReceivedMessage<string>>>> SubscribeChannelsInternalAsync(
+    protected virtual async Task<Dictionary<SubscriptionChannel, Channel<WebSocketReceivedMessage<JsonNode>>>> SubscribeChannelsInternalAsync(
         List<SubscriptionChannel> subscriptionChannels,
         CancellationToken cancellationToken = default)
     {
@@ -365,7 +366,7 @@ public abstract class PublicClientWebSocketServiceBase(
         }
 
         List<string> addedChannelNames = [];
-        Dictionary<SubscriptionChannel, Channel<WebSocketReceivedMessage<string>>> result = [];
+        Dictionary<SubscriptionChannel, Channel<WebSocketReceivedMessage<JsonNode>>> result = [];
 
         foreach (SubscriptionChannel subscriptionChannel in subscriptionChannels)
         {
@@ -384,7 +385,7 @@ public abstract class PublicClientWebSocketServiceBase(
                 continue;
             }
 
-            Channel<WebSocketReceivedMessage<string>> messageChannel = Channel.CreateBounded(
+            Channel<WebSocketReceivedMessage<JsonNode>> messageChannel = Channel.CreateBounded(
                     new BoundedChannelOptions(SubscribedChannelMessageDefaultCapacity)
                     {
                         FullMode = BoundedChannelFullMode.DropWrite,
@@ -392,7 +393,7 @@ public abstract class PublicClientWebSocketServiceBase(
                         SingleWriter = true,
                         AllowSynchronousContinuations = false
                     },
-                    void (WebSocketReceivedMessage<string> dropped) => _logger.SubscribedChannelMessageDroppedWarning(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType, dropped.ReceivedAt, dropped.Data));
+                    void (WebSocketReceivedMessage<JsonNode> dropped) => _logger.SubscribedChannelMessageDroppedWarning(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType, dropped.ReceivedAt, dropped.Data.ToJsonString(WebSocketClient.JsonWebOptions)));
 
             try
             {
@@ -592,9 +593,9 @@ public abstract class PublicClientWebSocketServiceBase(
 
     protected abstract Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState);
 
-    protected abstract Task<bool> ProcessServerNotificationAsync(string message, CancellationToken cancellationToken = default);
+    protected abstract Task<bool> ProcessServerNotificationAsync(JsonNode messageJson, CancellationToken cancellationToken = default);
 
-    protected abstract bool ReceiveChannelNotificationTaskStart(string channelName, Channel<WebSocketReceivedMessage<string>> receiveChannel);
+    protected abstract bool ReceiveChannelNotificationTaskStart(string channelName, Channel<WebSocketReceivedMessage<JsonNode>> receiveChannel);
 
     protected abstract Task ReceiveChannelNotificationTasksRemoveAsync(List<string> unsubscribedChannelNames, CancellationToken cancellationToken = default);
 
@@ -716,7 +717,7 @@ public static partial class PublicClientWebSocketServiceBaseLogs
         EventId = 70,
         Level = LogLevel.Warning,
         Message = "Received null or whitespace text message at {ReceivedAt}")]
-    public static partial void ReceivedNullOrWhitespaceTextMessageWarning(
+    public static partial void ReceivedNullTextMessageWarning(
         this ILogger logger, string receivedAt);
 
     [LoggerMessage(
