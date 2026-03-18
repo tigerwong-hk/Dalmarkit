@@ -226,7 +226,10 @@ public abstract class PublicClientWebSocketServiceBase(
                         continue;
                     }
 
-                    _logger.ReceivedTextMessageDebug(receivedTextMessage.Data.ToJsonString(WebSocketClient.JsonWebOptions));
+                    if (_logger.IsEnabled(LogLevel.Debug))
+                    {
+                        _logger.ReceivedTextMessageDebug(receivedTextMessage.Data.ToJsonString(WebSocketClient.JsonWebOptions));
+                    }
 
                     try
                     {
