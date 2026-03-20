@@ -5,14 +5,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.CloudFront" Version="4.0.12.3" />
-    <PackageReference Include="AWSSDK.CloudWatchEvents" Version="4.0.1.16" />
-    <PackageReference Include="AWSSDK.CognitoIdentityProvider" Version="4.0.6.2" />
-    <PackageReference Include="AWSSDK.Lambda" Version="4.0.13.4" />
-    <PackageReference Include="AWSSDK.Route53" Version="4.0.8.12" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.19" />
+    <PackageReference Include="AWSSDK.CloudFront" Version="4.0.12.4" />
+    <PackageReference Include="AWSSDK.CloudWatchEvents" Version="4.0.1.17" />
+    <PackageReference Include="AWSSDK.CognitoIdentityProvider" Version="4.0.6.3" />
+    <PackageReference Include="AWSSDK.Lambda" Version="4.0.13.5" />
+    <PackageReference Include="AWSSDK.Route53" Version="4.0.8.13" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.19.1" />
     <PackageReference Include="AWSSDK.SecretsManager.Caching" Version="2.0.0" />
-    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.7.3" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.7.4" />
     <PackageReference Include="Riok.Mapperly" Version="4.3.1" />
     <PackageReference Include="Roslynator.Analyzers" Version="4.15.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
