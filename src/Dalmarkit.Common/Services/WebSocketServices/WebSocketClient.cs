@@ -312,6 +312,10 @@ public class WebSocketClient : IWebSocketClient
                 await ConnectInternalAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.AttemptReconnectConnectTimeoutInfo(_options.ServerUrl, reconnectAttempts, policy.MaxAttempts);
+            }
             catch (OperationCanceledException)
             {
                 _logger.AttemptReconnectConnectCanceledInfo(_options.ServerUrl, reconnectAttempts, policy.MaxAttempts);
@@ -1533,103 +1537,110 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 3060,
         Level = LogLevel.Information,
+        Message = "AttemptReconnectAsync: connect timeout at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
+    public static partial void AttemptReconnectConnectTimeoutInfo(
+        this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
+
+    [LoggerMessage(
+        EventId = 3070,
+        Level = LogLevel.Information,
         Message = "AttemptReconnectAsync: connect canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectCanceledInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3070,
+        EventId = 3080,
         Level = LogLevel.Warning,
         Message = "AttemptReconnectAsync: connect canceled not reconnecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}` on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectCanceledNotReconnectingStateWarning(
         this ILogger logger, string socketUrl, WebSocketConnectionState connectionState, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3080,
+        EventId = 3090,
         Level = LogLevel.Information,
         Message = "AttemptReconnectAsync: connect canceled dispatch disconnected event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectCanceledDispatchDisconnectedEventCanceledInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3090,
+        EventId = 3100,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: connect canceled dispatch disconnected event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectCanceledDispatchDisconnectedEventException(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
 
     [LoggerMessage(
-        EventId = 3100,
+        EventId = 3110,
         Level = LogLevel.Information,
         Message = "AttemptReconnectAsync: connect canceled dispatch event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectCanceledDispatchEventCanceledInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3110,
+        EventId = 3120,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: connect canceled dispatch event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectCanceledDispatchEventException(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
 
     [LoggerMessage(
-        EventId = 3120,
+        EventId = 3130,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: connect exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectException(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
 
     [LoggerMessage(
-        EventId = 3130,
+        EventId = 3140,
         Level = LogLevel.Information,
         Message = "AttemptReconnectAsync: connect exception dispatch event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectExceptionDispatchEventCanceledInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3140,
+        EventId = 3150,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: connect exception dispatch event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectConnectExceptionDispatchEventException(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
 
     [LoggerMessage(
-        EventId = 3150,
+        EventId = 3160,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: max reconnect attempts reached at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedError(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3160,
+        EventId = 3170,
         Level = LogLevel.Warning,
         Message = "AttemptReconnectAsync: max reconnect attempts reached not reconnecting state at WebSocket {SocketUrl} with connection state `{ConnectionState}` on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedNotReconnectingStateWarning(
         this ILogger logger, string socketUrl, WebSocketConnectionState connectionState, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3170,
+        EventId = 3180,
         Level = LogLevel.Information,
         Message = "AttemptReconnectAsync: max reconnect attempts reached dispatch disconnected event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedDispatchDisconnectedEventCanceledInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3180,
+        EventId = 3190,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: max reconnect attempts reached dispatch disconnected event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedDispatchDisconnectedEventException(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts, Exception exception);
 
     [LoggerMessage(
-        EventId = 3190,
+        EventId = 3200,
         Level = LogLevel.Information,
         Message = "AttemptReconnectAsync: max reconnect attempts reached dispatch event canceled at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedDispatchEventCanceledInfo(
         this ILogger logger, string socketUrl, int reconnectAttempts, int maxAttempts);
 
     [LoggerMessage(
-        EventId = 3200,
+        EventId = 3210,
         Level = LogLevel.Error,
         Message = "AttemptReconnectAsync: max reconnect attempts reached dispatch event exception at WebSocket {SocketUrl} on attempt {ReconnectAttempts} of {MaxAttempts}")]
     public static partial void AttemptReconnectMaxReconnectAttemptsReachedDispatchEventException(
