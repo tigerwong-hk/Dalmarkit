@@ -63,8 +63,6 @@ public abstract class PublicClientWebSocketServiceBase(
         // No need to dispose of tasks https://devblogs.microsoft.com/dotnet/do-i-need-to-dispose-of-tasks/
         _receiveTextMessageTask = null;
 
-        _webSocketClient.Dispose();
-
         _disposalCts.Dispose();
 
         _receiveSemaphore.Dispose();
