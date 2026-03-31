@@ -63,6 +63,8 @@ public abstract class PublicClientWebSocketServiceBase(
         // No need to dispose of tasks https://devblogs.microsoft.com/dotnet/do-i-need-to-dispose-of-tasks/
         _receiveTextMessageTask = null;
 
+        _webSocketClient.Dispose();
+
         _disposalCts.Dispose();
 
         _receiveSemaphore.Dispose();
@@ -231,10 +233,7 @@ public abstract class PublicClientWebSocketServiceBase(
                         continue;
                     }
 
-                    if (_logger.IsEnabled(LogLevel.Debug))
-                    {
-                        _logger.ReceivedTextMessageDebug(receivedTextMessage.Data.ToJsonString(WebSocketClient.JsonWebOptions));
-                    }
+                    _logger.ReceivedTextMessageDebug(receivedTextMessage.Data);
 
                     try
                     {
@@ -247,7 +246,7 @@ public abstract class PublicClientWebSocketServiceBase(
                     }
                     catch (Exception ex)
                     {
-                        _logger.ProcessServerNotificationException(receivedTextMessage.ReceivedAt.ToString("u"), receivedTextMessage.Data.ToJsonString(WebSocketClient.JsonWebOptions), ex.Message, ex.InnerException?.Message, ex.StackTrace);
+                        _logger.ProcessServerNotificationException(receivedTextMessage.ReceivedAt.ToString("u"), receivedTextMessage.Data, ex);
                     }
                 }
             }
@@ -401,7 +400,7 @@ public abstract class PublicClientWebSocketServiceBase(
                         SingleWriter = true,
                         AllowSynchronousContinuations = false
                     },
-                    void (WebSocketReceivedMessage<JsonNode> dropped) => _logger.SubscribedChannelMessageDroppedWarning(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType, dropped.ReceivedAt, dropped.Data.ToJsonString(WebSocketClient.JsonWebOptions)));
+                    void (WebSocketReceivedMessage<JsonNode> dropped) => _logger.SubscribedChannelMessageDroppedWarning(subscriptionChannel.ChannelName, subscriptionChannel.NotificationMessageType, dropped.ReceivedAt, dropped.Data));
 
             try
             {
@@ -719,7 +718,7 @@ public static partial class PublicClientWebSocketServiceBaseLogs
         Level = LogLevel.Debug,
         Message = "Received text message: {TextMessage}")]
     public static partial void ReceivedTextMessageDebug(
-        this ILogger logger, string textMessage);
+        this ILogger logger, JsonNode textMessage);
 
     [LoggerMessage(
         EventId = 70,
@@ -773,9 +772,9 @@ public static partial class PublicClientWebSocketServiceBaseLogs
     [LoggerMessage(
         EventId = 140,
         Level = LogLevel.Error,
-        Message = "Process server notification exception for `{ReceivedAt} {TextMessage}` with message `{ExceptionMessage}` and inner exception `{InnerException}`: {StackTrace}")]
+        Message = "Process server notification exception for `{ReceivedAt} {TextMessage}`")]
     public static partial void ProcessServerNotificationException(
-        this ILogger logger, string receivedAt, string textMessage, string exceptionMessage, string? innerException, string? stackTrace);
+        this ILogger logger, string receivedAt, JsonNode textMessage, Exception exception);
 
     [LoggerMessage(
         EventId = 150,
@@ -971,7 +970,7 @@ public static partial class PublicClientWebSocketServiceBaseLogs
         Level = LogLevel.Warning,
         Message = "Subscribed channel message dropped for `{ChannelName}`:`{NotificationMessageType}`: {ReceivedAt} `{Message}`")]
     public static partial void SubscribedChannelMessageDroppedWarning(
-        this ILogger logger, string channelName, string? notificationMessageType, DateTimeOffset receivedAt, string message);
+        this ILogger logger, string channelName, string? notificationMessageType, DateTimeOffset receivedAt, JsonNode message);
 
     [LoggerMessage(
         EventId = 380,

@@ -99,7 +99,7 @@ public class WebSocketClient : IWebSocketClient
                 SingleWriter = true,
                 AllowSynchronousContinuations = false
             },
-            void (WebSocketReceivedMessage<JsonNode> dropped) => _logger.ReceivedTextMessageDroppedWarning(_options.ServerUrl, dropped.ReceivedAt, dropped.Data.ToJsonString(JsonWebOptions)));
+            void (WebSocketReceivedMessage<JsonNode> dropped) => _logger.ReceivedTextMessageDroppedWarning(_options.ServerUrl, dropped.ReceivedAt, dropped.Data));
     }
 
     public void Dispose()
@@ -1406,7 +1406,7 @@ public static partial class WebSocketClientLogs
         Level = LogLevel.Warning,
         Message = "Received text message dropped at WebSocket {SocketUrl}: {ReceivedAt} {ReceivedData}")]
     public static partial void ReceivedTextMessageDroppedWarning(
-        this ILogger logger, string socketUrl, DateTimeOffset receivedAt, string receivedData);
+        this ILogger logger, string socketUrl, DateTimeOffset receivedAt, JsonNode receivedData);
 
     [LoggerMessage(
         EventId = 1010,
