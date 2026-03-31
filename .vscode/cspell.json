@@ -10,6 +10,7 @@
         "buildtransitive",
         "cardano",
         "ciphertext",
+        "connstate",
         "contentfiles",
         "cronos",
         "dalmarkit",
