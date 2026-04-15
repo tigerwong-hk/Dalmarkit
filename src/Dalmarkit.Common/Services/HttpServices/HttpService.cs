@@ -7,6 +7,8 @@ using System.Net.Http.Json;
 using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+
 
 namespace Dalmarkit.Common.Services.HttpServices;
 
@@ -16,7 +18,10 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
     private readonly HttpClient _httpClient = Guard.NotNull(httpClient, nameof(httpClient));
     private readonly ILogger _logger = Guard.NotNull(logger, nameof(logger));
 
-    public static readonly JsonSerializerOptions WebOptions = new(JsonSerializerDefaults.Web);
+    public static readonly JsonSerializerOptions WebOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     public void Dispose()
     {
