@@ -1,4 +1,4 @@
-namespace Dalmarkit.Common.PubSub.SignalR;
+namespace Dalmarkit.Common.PubSub;
 
 public static class WebSocketClientTopics
 {

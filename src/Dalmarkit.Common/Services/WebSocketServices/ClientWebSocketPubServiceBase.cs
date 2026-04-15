@@ -1,25 +1,21 @@
 using System.Collections.Concurrent;
-using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using Dalmarkit.Common.Dtos.Events;
 using Dalmarkit.Common.PubSub;
-using Dalmarkit.Common.PubSub.SignalR;
 using Microsoft.Extensions.Logging;
 using static Dalmarkit.Common.Services.WebSocketServices.IWebSocketClient;
 
 namespace Dalmarkit.Common.Services.WebSocketServices;
 
-public abstract class PublicClientWebSocketPublisherServiceBase(
+public abstract class ClientWebSocketPubServiceBase(
     IWebSocketClient webSocketClient,
-    ITopicSubscriptionService topicSubscriptionService,
     ITopicPublisherService topicPublisherService,
-    ILogger<PublicClientWebSocketPublisherServiceBase> logger) : PublicClientWebSocketServiceBase(webSocketClient, logger), IPublicClientWebSocketPublisherService
+    ILogger<ClientWebSocketPubServiceBase> logger) : ClientWebSocketServiceBase(webSocketClient, logger), IClientWebSocketPubService
 {
     public const int SubscribedChannelTasksInitialCapacity = 8209;
 
-    private readonly ILogger<PublicClientWebSocketPublisherServiceBase> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly ITopicSubscriptionService _topicSubscriptionService = topicSubscriptionService ?? throw new ArgumentNullException(nameof(topicSubscriptionService));
+    private readonly ILogger<ClientWebSocketPubServiceBase> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly ITopicPublisherService _topicPublisherService = topicPublisherService ?? throw new ArgumentNullException(nameof(topicPublisherService));
     private readonly ConcurrentDictionary<string, ReceiveChannelMessagesTask> _subscribedChannelTasks = new(Environment.ProcessorCount, SubscribedChannelTasksInitialCapacity);
 
@@ -159,26 +155,6 @@ public abstract class PublicClientWebSocketPublisherServiceBase(
             TaskScheduler.Default);
     }
 
-    protected virtual bool PublishTopicsByPrefix<TDto>(string topicPrefix, string channelName, TDto publishDto, Func<ImmutableHashSet<string>, string, TDto, bool> publishTopics)
-    {
-        ImmutableHashSet<string> subscribedTopics = _topicSubscriptionService.GetTopicsByPrefix(topicPrefix);
-        if (subscribedTopics.Count == 0)
-        {
-            return false;
-        }
-
-        try
-        {
-            return publishTopics(subscribedTopics, channelName, publishDto);
-        }
-        catch (Exception ex)
-        {
-            _logger.PublishTopicsByPrefixPublishTopicsException(topicPrefix, channelName, ex);
-        }
-
-        return false;
-    }
-
     protected virtual bool ReceiveChannelNotificationTaskStart(string channelName, Channel<WebSocketReceivedMessage<JsonNode>> receiveChannel, Func<string, ChannelReader<WebSocketReceivedMessage<JsonNode>>, CancellationToken, Task> receiveNotificationsAsync, CancellationToken cancellationToken = default)
     {
         if (_isDisposed == 1)
@@ -245,7 +221,7 @@ public abstract class PublicClientWebSocketPublisherServiceBase(
             cancellationToken);
     }
 
-    protected virtual async Task RemoveReceiveChannelNotificationTasksAsync(List<string> unsubscribedChannelNames, Action<string> removeResourcesForChannel, CancellationToken cancellationToken = default)
+    protected virtual async Task RemoveReceiveChannelNotificationTasksAsync(List<string> unsubscribedChannelNames, Action<string>? removeResourcesForChannel, CancellationToken cancellationToken = default)
     {
         for (int i = 0; i < unsubscribedChannelNames.Count; i++)
         {
@@ -271,7 +247,7 @@ public abstract class PublicClientWebSocketPublisherServiceBase(
             try
             {
                 await StopReceiveChannelMessagesTaskAsync(i, unsubscribedChannelNames[i], unsubscribedChannelNames, receiveChannelMessagesTask, cancellationToken);
-                removeResourcesForChannel(unsubscribedChannelNames[i]);
+                removeResourcesForChannel?.Invoke(unsubscribedChannelNames[i]);
             }
             catch (Exception ex)
             {
@@ -423,7 +399,7 @@ public abstract class PublicClientWebSocketPublisherServiceBase(
     }
 }
 
-public static partial class PublicClientWebSocketPublisherServiceBaseLogs
+public static partial class ClientWebSocketPubServiceBaseLogs
 {
     [LoggerMessage(
         EventId = 1010,
@@ -498,173 +474,166 @@ public static partial class PublicClientWebSocketPublisherServiceBaseLogs
     [LoggerMessage(
         EventId = 5010,
         Level = LogLevel.Error,
-        Message = "PublishTopicsByPrefix: publish topics exception for prefix `{TopicPrefix}` and channel `{ChannelName}`")]
-    public static partial void PublishTopicsByPrefixPublishTopicsException(
-        this ILogger logger, string topicPrefix, string channelName, Exception exception);
-
-    [LoggerMessage(
-        EventId = 6010,
-        Level = LogLevel.Error,
         Message = "ReceiveChannelNotificationTaskStart: is disposed for channel `{ChannelName}`")]
     public static partial void ReceiveChannelNotificationTaskStartIsDisposedError(
         this ILogger logger, string channelName);
 
     [LoggerMessage(
-        EventId = 6020,
+        EventId = 5020,
         Level = LogLevel.Error,
         Message = "ReceiveChannelNotificationTaskStart: receive notification exception for channel `{ChannelName}`")]
     public static partial void ReceiveChannelNotificationTaskStartReceiveNotificationException(
         this ILogger logger, string channelName, AggregateException exception);
 
     [LoggerMessage(
-        EventId = 6030,
+        EventId = 5030,
         Level = LogLevel.Error,
         Message = "ReceiveChannelNotificationTaskStart: task added is disposed for channel `{ChannelName}`")]
     public static partial void ReceiveChannelNotificationTaskStartTaskAddedIsDisposedError(
         this ILogger logger, string channelName);
 
     [LoggerMessage(
-        EventId = 6040,
+        EventId = 5040,
         Level = LogLevel.Error,
         Message = "ReceiveChannelNotificationTaskStart: task not added for channel `{ChannelName}`")]
     public static partial void ReceiveChannelNotificationTaskStartTaskNotAddedError(
         this ILogger logger, string channelName);
 
     [LoggerMessage(
-        EventId = 7010,
+        EventId = 6010,
         Level = LogLevel.Error,
         Message = "RemoveReceiveChannelNotificationTasksAsync: unsubscribed channel name null or whitespace at {Index} of `{ChannelNames}`")]
     public static partial void RemoveReceiveChannelNotificationTasksAsyncUnsubscribedChannelNameNullOrWhitespaceError(
         this ILogger logger, int index, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 7020,
+        EventId = 6020,
         Level = LogLevel.Warning,
         Message = "RemoveReceiveChannelNotificationTasksAsync: unsubscribed channel not found for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void RemoveReceiveChannelNotificationTasksAsyncUnsubscribedChannelNotFoundWarning(
         this ILogger logger, string channelName, int index, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 7030,
+        EventId = 6030,
         Level = LogLevel.Error,
         Message = "RemoveReceiveChannelNotificationTasksAsync: receive channel messages task null for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void RemoveReceiveChannelNotificationTasksAsyncReceiveChannelMessagesTaskNullError(
         this ILogger logger, string channelName, int index, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 7040,
+        EventId = 6040,
         Level = LogLevel.Error,
         Message = "RemoveReceiveChannelNotificationTasksAsync: stop receive channel messages task exception for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void RemoveReceiveChannelNotificationTasksAsyncStopReceiveChannelMessagesTaskException(
         this ILogger logger, string channelName, int index, List<string> channelNames, Exception exception);
 
     [LoggerMessage(
-        EventId = 8010,
+        EventId = 7010,
         Level = LogLevel.Information,
         Message = "ResubscribeExchangeChannelAsync: channel `{ChannelName}`")]
     public static partial void ResubscribeExchangeChannelAsyncInfo(
         this ILogger logger, string channelName);
 
     [LoggerMessage(
-        EventId = 8020,
+        EventId = 7020,
         Level = LogLevel.Information,
         Message = "ResubscribeExchangeChannelAsync: unsubscribing exchange channel `{ChannelName}`")]
     public static partial void ResubscribeExchangeChannelAsyncUnsubscribingExchangeChannelInfo(
         this ILogger logger, string channelName);
 
     [LoggerMessage(
-        EventId = 8030,
+        EventId = 7030,
         Level = LogLevel.Information,
         Message = "ResubscribeExchangeChannelAsync: not unsubscribed channels `{ChannelNames}`")]
     public static partial void ResubscribeExchangeChannelAsyncChannelsNotUnsubscribedInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 8040,
+        EventId = 7040,
         Level = LogLevel.Error,
         Message = "ResubscribeExchangeChannelAsync: unsubscribe exchange channels exception for channel `{ChannelName}`")]
     public static partial void ResubscribeExchangeChannelAsyncUnsubscribeExchangeChannelsException(
         this ILogger logger, string channelName, Exception exception);
 
     [LoggerMessage(
-        EventId = 8050,
+        EventId = 7050,
         Level = LogLevel.Information,
         Message = "ResubscribeExchangeChannelAsync: subscribing exchange channel `{ChannelName}`")]
     public static partial void ResubscribeExchangeChannelAsyncSubscribingExchangeChannelInfo(
         this ILogger logger, string channelName);
 
     [LoggerMessage(
-        EventId = 8060,
+        EventId = 7060,
         Level = LogLevel.Information,
         Message = "ResubscribeExchangeChannelAsync: not subscribed channels `{ChannelNames}`")]
     public static partial void ResubscribeExchangeChannelAsyncChannelsNotSubscribedInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 8070,
+        EventId = 7070,
         Level = LogLevel.Error,
         Message = "ResubscribeExchangeChannelAsync: subscribe exchange channel exception for channel `{ChannelName}`")]
     public static partial void ResubscribeExchangeChannelAsyncSubscribeExchangeChannelException(
         this ILogger logger, string channelName, Exception exception);
 
     [LoggerMessage(
-        EventId = 9010,
+        EventId = 8010,
         Level = LogLevel.Error,
         Message = "StopReceiveChannelMessagesTaskAsync: receive channel null for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void StopReceiveChannelMessagesTaskAsyncReceiveChannelNullError(
         this ILogger logger, string channelName, int index, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 9020,
+        EventId = 8020,
         Level = LogLevel.Warning,
         Message = "StopReceiveChannelMessagesTaskAsync: receive channel not mark complete for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void StopReceiveChannelMessagesTaskAsyncReceiveChannelNotMarkCompleteWarning(
         this ILogger logger, string channelName, int index, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 9030,
+        EventId = 8030,
         Level = LogLevel.Error,
         Message = "StopReceiveChannelMessagesTaskAsync: receive cancellation token source null for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void StopReceiveChannelMessagesTaskAsyncReceiveCtsNullError(
         this ILogger logger, string channelName, int index, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 9040,
+        EventId = 8040,
         Level = LogLevel.Error,
         Message = "StopReceiveChannelMessagesTaskAsync: receive task null for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void StopReceiveChannelMessagesTaskAsyncReceiveTaskNullError(
         this ILogger logger, string channelName, int index, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 9050,
+        EventId = 8050,
         Level = LogLevel.Information,
         Message = "StopReceiveChannelMessagesTaskAsync: receive task shutdown timeout for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void StopReceiveChannelMessagesTaskAsyncReceiveTaskShutdownTimeoutInfo(
         this ILogger logger, string channelName, int index, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 9060,
+        EventId = 8060,
         Level = LogLevel.Error,
         Message = "StopReceiveChannelMessagesTaskAsync: receive task shutdown exception for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void StopReceiveChannelMessagesTaskAsyncReceiveTaskShutdownException(
         this ILogger logger, string channelName, int index, List<string> channelNames, Exception exception);
 
     [LoggerMessage(
-        EventId = 9070,
+        EventId = 8070,
         Level = LogLevel.Error,
         Message = "StopReceiveChannelMessagesTaskAsync: receive cancellation token source dispose exception for channel `{ChannelName}` at {Index} of `{ChannelNames}`")]
     public static partial void StopReceiveChannelMessagesTaskAsyncReceiveCtsDisposeException(
         this ILogger logger, string channelName, int index, List<string> channelNames, Exception exception);
 
     [LoggerMessage(
-        EventId = 10010,
+        EventId = 9010,
         Level = LogLevel.Error,
         Message = "NotifyWebSocketConnectionState: publish to topic exception for topic `{Topic}` and state `{ConnectionState}`")]
     public static partial void NotifyWebSocketConnectionStatePublishToTopicException(
         this ILogger logger, string topic, string connectionState, Exception exception);
 
     [LoggerMessage(
-        EventId = 11010,
+        EventId = 10010,
         Level = LogLevel.Error,
         Message = "DisposeReceiveChannelMessagesTask: exception")]
     public static partial void DisposeReceiveChannelMessagesTaskException(
