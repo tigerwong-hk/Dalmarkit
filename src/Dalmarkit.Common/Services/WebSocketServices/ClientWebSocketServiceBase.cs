@@ -21,6 +21,7 @@ public abstract class ClientWebSocketServiceBase(
     public const int SubscribedChannelsInitialCapacity = 8209;
 
     public string? AuthenticationId { get; private set; }
+    public string? WebSocketName => _webSocketClient.WebSocketName;
 
     private readonly CancellationTokenSource _disposalCts = new();
     private readonly IWebSocketClient _webSocketClient = webSocketClient ?? throw new ArgumentNullException(nameof(webSocketClient));
@@ -74,7 +75,7 @@ public abstract class ClientWebSocketServiceBase(
     {
         try
         {
-            await NotifyWebSocketConnectionState(WebSocketConnectionState.Connected).ConfigureAwait(false);
+            await NotifyWebSocketConnectionState(WebSocketConnectionState.Connected, AuthenticationId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -168,7 +169,7 @@ public abstract class ClientWebSocketServiceBase(
     {
         try
         {
-            await NotifyWebSocketConnectionState(WebSocketConnectionState.Connecting).ConfigureAwait(false);
+            await NotifyWebSocketConnectionState(WebSocketConnectionState.Connecting, AuthenticationId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -185,7 +186,7 @@ public abstract class ClientWebSocketServiceBase(
     {
         try
         {
-            await NotifyWebSocketConnectionState(WebSocketConnectionState.Disconnected).ConfigureAwait(false);
+            await NotifyWebSocketConnectionState(WebSocketConnectionState.Disconnected, AuthenticationId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -205,7 +206,7 @@ public abstract class ClientWebSocketServiceBase(
     {
         try
         {
-            await NotifyWebSocketConnectionState(WebSocketConnectionState.Disconnecting).ConfigureAwait(false);
+            await NotifyWebSocketConnectionState(WebSocketConnectionState.Disconnecting, AuthenticationId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -215,7 +216,6 @@ public abstract class ClientWebSocketServiceBase(
         {
             _logger.HandleOnWebSocketDisconnectingNotifyWebSocketConnectionStateException(ex);
         }
-
     }
 
     public virtual async Task ConnectAsync(string? authenticationId, CancellationToken cancellationToken = default)
@@ -629,7 +629,7 @@ public abstract class ClientWebSocketServiceBase(
         return Task.CompletedTask;
     }
 
-    protected abstract Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState);
+    protected abstract Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState, string? key = default, CancellationToken cancellationToken = default);
 
     protected abstract Task<bool> ProcessServerNotificationAsync(JsonNode messageJson, CancellationToken cancellationToken = default);
 
