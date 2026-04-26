@@ -2,10 +2,11 @@ namespace Dalmarkit.Common.PubSub;
 
 public static class WebSocketClientTopics
 {
+    public const string TopicDelimiter = "-";
     public const string ConnectionState = "connstate";
 
-    public static string GetConnectionStateTopic()
+    public static string GetConnectionStateTopic(string? name)
     {
-        return ConnectionState;
+        return string.IsNullOrWhiteSpace(name) ? ConnectionState : ConnectionState + TopicDelimiter + name;
     }
 }

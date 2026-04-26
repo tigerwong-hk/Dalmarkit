@@ -68,7 +68,7 @@ public abstract class ClientWebSocketPubServiceBase(
         }
 
         Dictionary<SubscriptionChannel, Channel<WebSocketReceivedMessage<JsonNode>>> subscribedChannels =
-            await SubscribeChannelsInternalAsync(subscriptionChannels, cancellationToken);
+            await SubscribeChannelsInternalAsync(subscriptionChannels, cancellationToken).ConfigureAwait(false);
         if (subscribedChannels.Count > 0)
         {
             return [.. subscribedChannels.Keys.Select(key => key.ChannelName)];
@@ -86,10 +86,10 @@ public abstract class ClientWebSocketPubServiceBase(
             throw new ArgumentException("No channel names");
         }
 
-        List<string> unsubscribedChannelNames = await UnsubscribeChannelsInternalAsync(channelNames, cancellationToken);
+        List<string> unsubscribedChannelNames = await UnsubscribeChannelsInternalAsync(channelNames, cancellationToken).ConfigureAwait(false);
         if (unsubscribedChannelNames.Count > 0)
         {
-            await ReceiveChannelNotificationTasksRemoveAsync(unsubscribedChannelNames, cancellationToken);
+            await ReceiveChannelNotificationTasksRemoveAsync(unsubscribedChannelNames, cancellationToken).ConfigureAwait(false);
             return unsubscribedChannelNames;
         }
 
@@ -126,7 +126,7 @@ public abstract class ClientWebSocketPubServiceBase(
 
         try
         {
-            await receiveChannelMessagesTask.ReceiveChannel.Writer.WriteAsync(channelMessage, cancellationToken);
+            await receiveChannelMessagesTask.ReceiveChannel.Writer.WriteAsync(channelMessage, cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch (OperationCanceledException)
@@ -141,14 +141,14 @@ public abstract class ClientWebSocketPubServiceBase(
         }
     }
 
-    protected virtual async Task PublishTopicAsync<TDto>(string topic, string method, TDto publishDto)
+    protected virtual async Task PublishTopicAsync<TDto>(string topic, string method, TDto publishDto, string? key = default, CancellationToken cancellationToken = default)
     {
-        await _topicPublisherService.PublishToTopicAsync(topic, method, publishDto);
+        await _topicPublisherService.PublishToTopicAsync(topic, method, publishDto, key, cancellationToken).ConfigureAwait(false);
     }
 
-    protected virtual void PublishAndForgetTopic<TDto>(string topic, string method, TDto publishDto, CancellationToken cancellationToken = default)
+    protected virtual void PublishAndForgetTopic<TDto>(string topic, string method, TDto publishDto, string? key = default, CancellationToken cancellationToken = default)
     {
-        _ = _topicPublisherService.PublishToTopicAsync(topic, method, publishDto).ContinueWith(
+        _ = _topicPublisherService.PublishToTopicAsync(topic, method, publishDto, key, cancellationToken).ContinueWith(
             t => _logger.PublishAndForgetTopicException(topic, t.Exception!),
             cancellationToken,
             TaskContinuationOptions.OnlyOnFaulted,
@@ -217,8 +217,8 @@ public abstract class ClientWebSocketPubServiceBase(
     protected virtual async Task ReceiveNotificationsAsync(string channelName, ChannelReader<WebSocketReceivedMessage<JsonNode>> channelReader, Func<string, JsonNode, CancellationToken, Task<bool>> processNotificationsAsync, CancellationToken cancellationToken = default)
     {
         await ReceiveTextMessagesAsync(channelReader,
-            async (messageJson) => await processNotificationsAsync(channelName, messageJson, cancellationToken),
-            cancellationToken);
+            async (messageJson) => await processNotificationsAsync(channelName, messageJson, cancellationToken).ConfigureAwait(false),
+            cancellationToken).ConfigureAwait(false);
     }
 
     protected virtual async Task RemoveReceiveChannelNotificationTasksAsync(List<string> unsubscribedChannelNames, Action<string>? removeResourcesForChannel, CancellationToken cancellationToken = default)
@@ -246,7 +246,7 @@ public abstract class ClientWebSocketPubServiceBase(
 
             try
             {
-                await StopReceiveChannelMessagesTaskAsync(i, unsubscribedChannelNames[i], unsubscribedChannelNames, receiveChannelMessagesTask, cancellationToken);
+                await StopReceiveChannelMessagesTaskAsync(i, unsubscribedChannelNames[i], unsubscribedChannelNames, receiveChannelMessagesTask, cancellationToken).ConfigureAwait(false);
                 removeResourcesForChannel?.Invoke(unsubscribedChannelNames[i]);
             }
             catch (Exception ex)
@@ -263,7 +263,7 @@ public abstract class ClientWebSocketPubServiceBase(
         try
         {
             _logger.ResubscribeExchangeChannelAsyncUnsubscribingExchangeChannelInfo(channelName);
-            List<string> channelsNotUnsubscribed = await UnsubscribeExchangeChannelsAsync([channelName], cancellationToken);
+            List<string> channelsNotUnsubscribed = await UnsubscribeExchangeChannelsAsync([channelName], cancellationToken).ConfigureAwait(false);
             if (channelsNotUnsubscribed.Count > 0)
             {
                 _logger.ResubscribeExchangeChannelAsyncChannelsNotUnsubscribedInfo(channelsNotUnsubscribed);
@@ -279,20 +279,20 @@ public abstract class ClientWebSocketPubServiceBase(
         try
         {
             _logger.ResubscribeExchangeChannelAsyncSubscribingExchangeChannelInfo(channelName);
-            List<string> channelsNotSubscribed = await SubscribeExchangeChannelsAsync([channelName], cancellationToken);
+            List<string> channelsNotSubscribed = await SubscribeExchangeChannelsAsync([channelName], cancellationToken).ConfigureAwait(false);
             if (channelsNotSubscribed.Count == 0)
             {
                 return true;
             }
 
             _logger.ResubscribeExchangeChannelAsyncChannelsNotSubscribedInfo(channelsNotSubscribed);
-            await ReceiveChannelNotificationTasksRemoveAsync(channelsNotSubscribed, cancellationToken);
+            await ReceiveChannelNotificationTasksRemoveAsync(channelsNotSubscribed, cancellationToken).ConfigureAwait(false);
             return false;
         }
         catch (Exception ex)
         {
             _logger.ResubscribeExchangeChannelAsyncSubscribeExchangeChannelException(channelName, ex);
-            await ReceiveChannelNotificationTasksRemoveAsync([channelName], cancellationToken);
+            await ReceiveChannelNotificationTasksRemoveAsync([channelName], cancellationToken).ConfigureAwait(false);
             return false;
         }
     }
@@ -329,7 +329,7 @@ public abstract class ClientWebSocketPubServiceBase(
             }
             else
             {
-                await receiveChannelMessagesTask.ReceiveTask.WaitAsync(TimeSpan.FromMilliseconds(GracefulShutdownTimeoutMilliseconds), cancellationToken);
+                await receiveChannelMessagesTask.ReceiveTask.WaitAsync(TimeSpan.FromMilliseconds(GracefulShutdownTimeoutMilliseconds), cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -359,16 +359,16 @@ public abstract class ClientWebSocketPubServiceBase(
         }
     }
 
-    protected override async Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState)
+    protected override async Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState, string? key = default, CancellationToken cancellationToken = default)
     {
-        string connectionStateTopic = WebSocketClientTopics.GetConnectionStateTopic();
+        string connectionStateTopic = WebSocketClientTopics.GetConnectionStateTopic(WebSocketName);
 
         ConnectionStateEventDto connectionStateEventDto = new(
             webSocketConnectionState.ToString(),
             DateTimeOffset.UtcNow);
         try
         {
-            await _topicPublisherService.PublishToTopicAsync(connectionStateTopic, "Update", connectionStateEventDto);
+            await _topicPublisherService.PublishToTopicAsync(connectionStateTopic, "Update", connectionStateEventDto, key, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

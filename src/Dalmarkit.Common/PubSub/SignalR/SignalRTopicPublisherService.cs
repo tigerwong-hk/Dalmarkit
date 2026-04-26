@@ -9,7 +9,7 @@ public class SignalRTopicPublisherService(
     private readonly ISignalRHubPublisher _hubPublisher = hubPublisher ?? throw new ArgumentNullException(nameof(hubPublisher));
     private readonly ILogger<SignalRTopicPublisherService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    public virtual async Task PublishToAllAsync<TPayload>(string topic, string method, TPayload payload)
+    public virtual async Task PublishToAllAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(topic))
         {
@@ -43,7 +43,7 @@ public class SignalRTopicPublisherService(
         }
     }
 
-    public virtual async Task PublishToTopicAsync<TPayload>(string topic, string method, TPayload payload)
+    public virtual async Task PublishToTopicAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(topic))
         {

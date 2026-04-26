@@ -17,6 +17,8 @@ namespace Dalmarkit.Common.Services.WebSocketServices;
 
 public class WebSocketClient : IWebSocketClient
 {
+    public string? WebSocketName => _options.WebSocketName;
+
     public const int PendingRequestsInitialCapacity = 503;
 
     private readonly IEventDispatcher _eventDispatcher;

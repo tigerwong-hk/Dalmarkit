@@ -16,7 +16,8 @@ public class WebSocketClientOptions
     public ReconnectionPolicy? Reconnection { get; set; }
     public int RequestTimeoutMilliseconds { get; set; } = 10000;
     public int ResponseTimeoutMilliseconds { get; set; } = 30000;
-    public string ServerUrl { get; set; } = string.Empty;
+    public required string ServerUrl { get; set; }
+    public string? WebSocketName { get; set; }
 
     public void Validate()
     {
