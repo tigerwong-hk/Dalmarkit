@@ -1,35 +1,25 @@
 using Confluent.Kafka;
 using Dalmarkit.Messaging.Kafka.Config;
 using Dalmarkit.Messaging.Kafka.Handlers;
-using Dalmarkit.Messaging.Kafka.Serialization;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net;
-using System.Text.Json;
 
 namespace Dalmarkit.Messaging.Kafka.Producers;
 
 /// <summary>
 /// Confluent.Kafka-based producer with AWS MSK IAM authentication
-/// Keys are serialized as UTF-8 strings and values are serialized with <see cref="KafkaJsonSerializer{T}"/>
+/// Keys are serialized as UTF-8 strings
+/// Values are passed through with Confluent's built-in <see cref="Serializers.ByteArray"/> (or <see cref="Serializers.Utf8"/> for string)
+/// callers must pre-serialize the payload (typically via an <c>IKafkaMessageEnvelope</c>) before calling <see cref="ProduceAsync(string, string?, TValue, CancellationToken)"/>
 /// The producer is idempotent (acks=all, enable.idempotence=true) by default
 /// On a fatal librdkafka error the underlying producer is disposed and rebuilt on the next call
 /// SCRAM-SHA-512 is the only supported SASL mechanism for non-AWS clusters
 /// </summary>
-/// <typeparam name="TValue">Value type</typeparam>
+/// <typeparam name="TValue">Value type, must be <see cref="byte"/>[] or <see cref="string"/></typeparam>
 public class KafkaProducerService<TValue> : IKafkaProducerService<TValue>
 {
-    /// <summary>
-    /// DI key used to look up the <see cref="JsonSerializerOptions"/> applied by <see cref="KafkaJsonSerializer{T}"/>
-    /// Register a keyed singleton under this key from the host so Kafka payload serialization can be configured (e.g. decimal/enum converters) consistently with other transports
-    /// </summary>
-#pragma warning disable RCS1158 // Static member in generic type should use a type parameter
-    public const string JsonSerializerOptionsServiceKey = "Dalmarkit.Messaging.Kafka.Producers";
-#pragma warning restore RCS1158 // Static member in generic type should use a type parameter
-
     private readonly IBootstrapServersProvider _bootstrapServersProvider;
-    private readonly JsonSerializerOptions _jsonSerializerOptions;
     private readonly KafkaProducerOptions _options;
     private readonly ILogger<KafkaProducerService<TValue>> _logger;
     private readonly SemaphoreSlim _initSemaphore = new(1, 1);
@@ -44,25 +34,21 @@ public class KafkaProducerService<TValue> : IKafkaProducerService<TValue>
     /// Lives for the lifetime of this instance unless a fatal error forces a rebuild.
     /// </summary>
     /// <param name="bootstrapServersProvider">Retrieve list of Kafka bootstrap servers</param>
-    /// <param name="jsonSerializerOptions">JSON serializer options for payload values (resolved from DI container under <see cref="JsonSerializerOptionsServiceKey"/> so transports can share converters)</param>
     /// <param name="oauthHandlers">OAuth handlers</param>
     /// <param name="options">Kafka producer options</param>
     /// <param name="logger">Logger</param>
     public KafkaProducerService(
         IBootstrapServersProvider bootstrapServersProvider,
-        [FromKeyedServices(JsonSerializerOptionsServiceKey)] JsonSerializerOptions jsonSerializerOptions,
         IOauthHandlers oauthHandlers,
         IOptions<KafkaProducerOptions> options,
         ILogger<KafkaProducerService<TValue>> logger)
     {
         ArgumentNullException.ThrowIfNull(bootstrapServersProvider);
-        ArgumentNullException.ThrowIfNull(jsonSerializerOptions);
         ArgumentNullException.ThrowIfNull(oauthHandlers);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _bootstrapServersProvider = bootstrapServersProvider;
-        _jsonSerializerOptions = jsonSerializerOptions;
         _oauthHandlers = oauthHandlers;
         _logger = logger;
 
@@ -217,7 +203,7 @@ public class KafkaProducerService<TValue> : IKafkaProducerService<TValue>
     {
         ProducerBuilder<string, TValue> builder = new ProducerBuilder<string, TValue>(producerConfig)
             .SetKeySerializer(Serializers.Utf8)
-            .SetValueSerializer(new KafkaJsonSerializer<TValue>(_jsonSerializerOptions))
+            .SetValueSerializer(GetValueSerializer())
             .SetErrorHandler(HandleProducerError);
         // https://github.com/confluentinc/confluent-kafka-dotnet/issues/1834 - SetLogHandler crashes librdkafka in some configs
         // .SetLogHandler((_, logMessage) => _logger.KafkaProducerServiceProducerDebug(logMessage.Facility, logMessage.Message))
@@ -318,6 +304,29 @@ public class KafkaProducerService<TValue> : IKafkaProducerService<TValue>
         {
             _ = _initSemaphore.Release();
         }
+    }
+
+
+    private static ISerializer<TValue> GetValueSerializer()
+    {
+        // Application-level serialization (JSON / Avro / Proto / etc.) lives in the IKafkaMessageEnvelope
+        // Producer only ferries opaque bytes (or, for legacy callers, UTF-8 strings)
+#pragma warning disable IDE0046 // Convert to conditional expression
+        if (typeof(TValue) == typeof(byte[]))
+        {
+            return (ISerializer<TValue>)(object)Serializers.ByteArray;
+        }
+        else if (typeof(TValue) == typeof(string))
+        {
+            return (ISerializer<TValue>)(object)Serializers.Utf8;
+        }
+        else
+        {
+            throw new NotSupportedException(
+                    $"KafkaProducerService<{typeof(TValue).Name}> requires the payload to be pre-serialized; " +
+                    "register IKafkaProducerService<byte[]> and serialize in an IKafkaMessageEnvelope");
+        }
+#pragma warning restore IDE0046 // Convert to conditional expression
     }
 
     private void HandleProducerError(IProducer<string, TValue> faultedProducer, Error error)
