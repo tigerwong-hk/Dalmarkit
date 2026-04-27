@@ -46,7 +46,7 @@ public class KafkaTopicPublisherService(
 
         try
         {
-            DeliveryResult<string, TPayload> result = await _messageEnvelope.PublishAsync(topic, method, payload, key, cancellationToken).ConfigureAwait(false);
+            DeliveryResult<string, byte[]> result = await _messageEnvelope.PublishAsync(topic, method, payload, key, cancellationToken).ConfigureAwait(false);
             _logger.KafkaPublishInternalAsyncProduceDebug(topic, method, key, result.Offset, result.Partition, result.Status, result.Timestamp.UnixTimestampMs);
         }
         catch (OperationCanceledException)

@@ -4,8 +4,8 @@ namespace Dalmarkit.Messaging.PubSub.Kafka;
 
 /// <summary>
 /// Abstracts the Kafka wire format chosen by <see cref="KafkaTopicPublisherService"/>
-/// Implementations decide how a topic/method/payload tuple maps onto a Kafka message
-/// e.g. raw payload value with metadata in headers, typed envelope wrapping the payload, CloudEvents, etc
+/// Implementations own all payload serialization and decide how a topic/method/payload tuple maps onto a Kafka message (envelope wrapping, CloudEvents framing, etc.) before it reaches the byte-oriented producer
+/// The underlying producer is <see cref="Messaging.Kafka.Producers.IKafkaProducerService{Byte}"/> of <see cref="byte"/>[], shared across all TPayload values
 /// </summary>
 public interface IKafkaMessageEnvelope
 {
@@ -18,7 +18,7 @@ public interface IKafkaMessageEnvelope
     /// <param name="payload">Payload</param>
     /// <param name="key">Key</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    Task<DeliveryResult<string, TPayload>> PublishAsync<TPayload>(
+    Task<DeliveryResult<string, byte[]>> PublishAsync<TPayload>(
         string topic,
         string method,
         TPayload payload,
