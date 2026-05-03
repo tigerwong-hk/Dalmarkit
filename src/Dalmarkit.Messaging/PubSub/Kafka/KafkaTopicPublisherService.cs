@@ -13,16 +13,16 @@ public class KafkaTopicPublisherService(
     private readonly IKafkaMessageEnvelope _messageEnvelope = messageEnvelope ?? throw new ArgumentNullException(nameof(messageEnvelope));
     private readonly ILogger<KafkaTopicPublisherService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    public virtual Task PublishToAllAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, CancellationToken cancellationToken = default)
+    public virtual Task PublishToAllAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, string? businessMessageId = default, CancellationToken cancellationToken = default)
     {
         // Kafka equivalent of SignalR's PublishToAll: send to a well-known fan-out topic.
         // Caller-supplied topic is preserved as part of the method label so subscribers can de-multiplex
-        return PublishInternalAsync(PublishToAllTopic, BuildFanoutMethod(topic, method), payload, key, cancellationToken);
+        return PublishInternalAsync(PublishToAllTopic, BuildFanoutMethod(topic, method), payload, key, businessMessageId, cancellationToken);
     }
 
-    public virtual Task PublishToTopicAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, CancellationToken cancellationToken = default)
+    public virtual Task PublishToTopicAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, string? businessMessageId = default, CancellationToken cancellationToken = default)
     {
-        return PublishInternalAsync(topic, method, payload, key, cancellationToken);
+        return PublishInternalAsync(topic, method, payload, key, businessMessageId, cancellationToken);
     }
 
     private static string BuildFanoutMethod(string topic, string method)
@@ -30,33 +30,33 @@ public class KafkaTopicPublisherService(
         return string.IsNullOrWhiteSpace(topic) ? method : $"{topic}:{method}";
     }
 
-    private async Task PublishInternalAsync<TPayload>(string topic, string method, TPayload payload, string? key, CancellationToken cancellationToken = default)
+    private async Task PublishInternalAsync<TPayload>(string topic, string method, TPayload payload, string? key, string? businessMessageId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(topic))
         {
-            _logger.KafkaPublishInternalAsyncTopicNullError();
+            _logger.KafkaPublishInternalAsyncTopicNullError(key, businessMessageId);
             throw new ArgumentException("missing topic");
         }
 
         if (string.IsNullOrWhiteSpace(method))
         {
-            _logger.KafkaPublishInternalAsyncMethodNullError(topic);
+            _logger.KafkaPublishInternalAsyncMethodNullError(topic, key, businessMessageId);
             throw new ArgumentException("missing method");
         }
 
         try
         {
-            DeliveryResult<string, byte[]> result = await _messageEnvelope.PublishAsync(topic, method, payload, key, cancellationToken).ConfigureAwait(false);
-            _logger.KafkaPublishInternalAsyncProduceDebug(topic, method, key, result.Offset, result.Partition, result.Status, result.Timestamp.UnixTimestampMs);
+            DeliveryResult<string, byte[]> result = await _messageEnvelope.PublishAsync(topic, method, payload, key, businessMessageId, cancellationToken).ConfigureAwait(false);
+            _logger.KafkaPublishInternalAsyncProduceDebug(topic, method, key, businessMessageId, result.Offset, result.Partition, result.Status, result.Timestamp.UnixTimestampMs);
         }
         catch (OperationCanceledException)
         {
-            _logger.KafkaPublishInternalAsyncProduceCanceledInfo(topic, method);
+            _logger.KafkaPublishInternalAsyncProduceCanceledInfo(topic, method, key, businessMessageId);
             throw;
         }
         catch (Exception ex)
         {
-            _logger.KafkaPublishInternalAsyncProduceException(topic, method, ex);
+            _logger.KafkaPublishInternalAsyncProduceException(topic, method, key, businessMessageId, ex);
             throw;
         }
     }
@@ -67,35 +67,35 @@ public static partial class KafkaTopicPublisherServiceLogs
     [LoggerMessage(
         EventId = 1010,
         Level = LogLevel.Error,
-        Message = "KafkaPublishInternalAsync: topic null")]
+        Message = "KafkaPublishInternalAsync: topic null with key `{Key}` and business message id `{BusinessMessageId}`")]
     public static partial void KafkaPublishInternalAsyncTopicNullError(
-        this ILogger logger);
+        this ILogger logger, string? key, string? businessMessageId);
 
     [LoggerMessage(
         EventId = 1020,
         Level = LogLevel.Error,
-        Message = "KafkaPublishInternalAsync: method null for topic `{Topic}`")]
+        Message = "KafkaPublishInternalAsync: method null for topic `{Topic}` with key `{Key}` and business message id `{BusinessMessageId}`")]
     public static partial void KafkaPublishInternalAsyncMethodNullError(
-        this ILogger logger, string topic);
+        this ILogger logger, string topic, string? key, string? businessMessageId);
 
     [LoggerMessage(
         EventId = 1030,
         Level = LogLevel.Information,
-        Message = "KafkaPublishInternalAsync: published topic `{Topic}` with method `{Method}` and key `{Key}` at offset `{Offset}`, partition `{Partition}`, status `{status}` and timestamp `{UnixTimestampMs}`")]
+        Message = "KafkaPublishInternalAsync: published topic `{Topic}` with method `{Method}`, key `{Key}` and business message id `{BusinessMessageId}` at offset `{Offset}`, partition `{Partition}`, status `{status}` and timestamp `{UnixTimestampMs}`")]
     public static partial void KafkaPublishInternalAsyncProduceDebug(
-        this ILogger logger, string topic, string method, string? key, Offset offset, Partition partition, PersistenceStatus status, long unixTimestampMs);
+        this ILogger logger, string topic, string method, string? key, string? businessMessageId, Offset offset, Partition partition, PersistenceStatus status, long unixTimestampMs);
 
     [LoggerMessage(
         EventId = 1040,
         Level = LogLevel.Information,
-        Message = "KafkaPublishInternalAsync: produce canceled for topic `{Topic}` with method `{Method}`")]
+        Message = "KafkaPublishInternalAsync: produce canceled for topic `{Topic}` with method `{Method}`, key `{Key}` and business message id `{BusinessMessageId}`")]
     public static partial void KafkaPublishInternalAsyncProduceCanceledInfo(
-        this ILogger logger, string topic, string method);
+        this ILogger logger, string topic, string method, string? key, string? businessMessageId);
 
     [LoggerMessage(
         EventId = 1050,
         Level = LogLevel.Error,
-        Message = "KafkaPublishInternalAsync: produce exception for topic `{Topic}` with method `{Method}`")]
+        Message = "KafkaPublishInternalAsync: produce exception for topic `{Topic}` with method `{Method}`, key `{Key}` and business message id `{BusinessMessageId}`")]
     public static partial void KafkaPublishInternalAsyncProduceException(
-        this ILogger logger, string topic, string method, Exception exception);
+        this ILogger logger, string topic, string method, string? key, string? businessMessageId, Exception exception);
 }

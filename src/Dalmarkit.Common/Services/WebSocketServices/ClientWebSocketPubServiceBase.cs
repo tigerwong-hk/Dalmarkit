@@ -141,14 +141,14 @@ public abstract class ClientWebSocketPubServiceBase(
         }
     }
 
-    protected virtual async Task PublishTopicAsync<TDto>(string topic, string method, TDto publishDto, string? key = default, CancellationToken cancellationToken = default)
+    protected virtual async Task PublishTopicAsync<TDto>(string topic, string method, TDto publishDto, string? key = default, string? businessMessageId = default, CancellationToken cancellationToken = default)
     {
-        await _topicPublisherService.PublishToTopicAsync(topic, method, publishDto, key, cancellationToken).ConfigureAwait(false);
+        await _topicPublisherService.PublishToTopicAsync(topic, method, publishDto, key, businessMessageId, cancellationToken).ConfigureAwait(false);
     }
 
-    protected virtual void PublishAndForgetTopic<TDto>(string topic, string method, TDto publishDto, string? key = default, CancellationToken cancellationToken = default)
+    protected virtual void PublishAndForgetTopic<TDto>(string topic, string method, TDto publishDto, string? key = default, string? businessMessageId = default, CancellationToken cancellationToken = default)
     {
-        _ = _topicPublisherService.PublishToTopicAsync(topic, method, publishDto, key, cancellationToken).ContinueWith(
+        _ = _topicPublisherService.PublishToTopicAsync(topic, method, publishDto, key, businessMessageId, cancellationToken).ContinueWith(
             t => _logger.PublishAndForgetTopicException(topic, t.Exception!),
             cancellationToken,
             TaskContinuationOptions.OnlyOnFaulted,
@@ -368,7 +368,7 @@ public abstract class ClientWebSocketPubServiceBase(
             DateTimeOffset.UtcNow);
         try
         {
-            await _topicPublisherService.PublishToTopicAsync(connectionStateTopic, "Update", connectionStateEventDto, key, cancellationToken).ConfigureAwait(false);
+            await _topicPublisherService.PublishToTopicAsync(connectionStateTopic, "Update", connectionStateEventDto, key, null, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

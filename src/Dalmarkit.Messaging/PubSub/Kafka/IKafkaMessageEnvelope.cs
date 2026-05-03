@@ -17,11 +17,13 @@ public interface IKafkaMessageEnvelope
     /// <param name="method">Method</param>
     /// <param name="payload">Payload</param>
     /// <param name="key">Key</param>
+    /// <param name="businessMessageId">Logical idempotency key; the implementation generates one (e.g. <c>Guid.NewGuid().ToString("N")</c>) when null so the wire always carries a value</param>
     /// <param name="cancellationToken">Cancellation token</param>
     Task<DeliveryResult<string, byte[]>> PublishAsync<TPayload>(
         string topic,
         string method,
         TPayload payload,
         string? key,
+        string? businessMessageId,
         CancellationToken cancellationToken);
 }

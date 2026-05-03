@@ -9,7 +9,7 @@ public class SignalRTopicPublisherService(
     private readonly ISignalRHubPublisher _hubPublisher = hubPublisher ?? throw new ArgumentNullException(nameof(hubPublisher));
     private readonly ILogger<SignalRTopicPublisherService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    public virtual async Task PublishToAllAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, CancellationToken cancellationToken = default)
+    public virtual async Task PublishToAllAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, string? businessMessageId = default, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(topic))
         {
@@ -23,12 +23,17 @@ public class SignalRTopicPublisherService(
             throw new ArgumentException("missing method");
         }
 
+        string resolvedBusinessMessageId = string.IsNullOrWhiteSpace(businessMessageId)
+            ? Guid.NewGuid().ToString("D")
+            : businessMessageId;
+
         TopicMessage<TPayload> message = new()
         {
-            Topic = topic,
+            BusinessMessageId = resolvedBusinessMessageId,
             Method = method,
             Payload = payload,
-            PublishTimestamp = DateTimeOffset.UtcNow
+            PublishTimestamp = DateTimeOffset.UtcNow,
+            Topic = topic,
         };
 
         try
@@ -43,7 +48,7 @@ public class SignalRTopicPublisherService(
         }
     }
 
-    public virtual async Task PublishToTopicAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, CancellationToken cancellationToken = default)
+    public virtual async Task PublishToTopicAsync<TPayload>(string topic, string method, TPayload payload, string? key = default, string? businessMessageId = default, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(topic))
         {
@@ -57,12 +62,17 @@ public class SignalRTopicPublisherService(
             throw new ArgumentException("missing method");
         }
 
+        string resolvedBusinessMessageId = string.IsNullOrWhiteSpace(businessMessageId)
+            ? Guid.NewGuid().ToString("D")
+            : businessMessageId;
+
         TopicMessage<TPayload> message = new()
         {
-            Topic = topic,
+            BusinessMessageId = resolvedBusinessMessageId,
             Method = method,
             Payload = payload,
-            PublishTimestamp = DateTimeOffset.UtcNow
+            PublishTimestamp = DateTimeOffset.UtcNow,
+            Topic = topic,
         };
 
         try
