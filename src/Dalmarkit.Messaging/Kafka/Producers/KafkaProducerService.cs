@@ -22,8 +22,9 @@ public class KafkaProducerService<TValue> : IKafkaProducerService<TValue>
     private readonly IBootstrapServersProvider _bootstrapServersProvider;
     private readonly KafkaProducerOptions _options;
     private readonly ILogger<KafkaProducerService<TValue>> _logger;
+    private readonly SemaphoreSlim _inflightSemaphore;
     private readonly SemaphoreSlim _initSemaphore = new(1, 1);
-    private readonly IOauthHandlers _oauthHandlers;
+    private readonly IOauthHandlers? _oauthHandlers;
 
     private volatile int _isDisposed;
 
@@ -34,26 +35,42 @@ public class KafkaProducerService<TValue> : IKafkaProducerService<TValue>
     /// Lives for the lifetime of this instance unless a fatal error forces a rebuild.
     /// </summary>
     /// <param name="bootstrapServersProvider">Retrieve list of Kafka bootstrap servers</param>
-    /// <param name="oauthHandlers">OAuth handlers</param>
     /// <param name="options">Kafka producer options</param>
     /// <param name="logger">Logger</param>
+    /// <param name="oauthHandlers">OAuth handlers</param>
     public KafkaProducerService(
         IBootstrapServersProvider bootstrapServersProvider,
-        IOauthHandlers oauthHandlers,
         IOptions<KafkaProducerOptions> options,
-        ILogger<KafkaProducerService<TValue>> logger)
+        ILogger<KafkaProducerService<TValue>> logger,
+        IOauthHandlers? oauthHandlers = null)
     {
         ArgumentNullException.ThrowIfNull(bootstrapServersProvider);
-        ArgumentNullException.ThrowIfNull(oauthHandlers);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
+        // Fail fast on unsupported TValue at construction time so misconfiguration surfaces at host startup
+        // (ValidateOnStart) rather than on first ProduceAsync call. Mirrors GetValueSerializer's runtime check
+        if (typeof(TValue) != typeof(byte[]) && typeof(TValue) != typeof(string))
+        {
+            throw new NotSupportedException(
+                $"KafkaProducerService<{typeof(TValue).FullName ?? typeof(TValue).Name}> requires the payload to be pre-serialized; " +
+                "TValue must be byte[] or string. Register IKafkaProducerService<byte[]> and serialize in an IKafkaMessageEnvelope.");
+        }
+
         _bootstrapServersProvider = bootstrapServersProvider;
-        _oauthHandlers = oauthHandlers;
         _logger = logger;
 
         _options = options.Value;
         _options.Validate();
+
+        if (string.IsNullOrWhiteSpace(_options.BootstrapServers))
+        {
+            ArgumentNullException.ThrowIfNull(oauthHandlers);
+            _oauthHandlers = oauthHandlers;
+        }
+
+        int maxInflight = _options.MaxInflightProduceAsync > 0 ? _options.MaxInflightProduceAsync : int.MaxValue;
+        _inflightSemaphore = new SemaphoreSlim(maxInflight, maxInflight);
     }
 
     /// <inheritdoc />
@@ -135,6 +152,23 @@ public class KafkaProducerService<TValue> : IKafkaProducerService<TValue>
         ArgumentException.ThrowIfNullOrWhiteSpace(topic);
         ArgumentNullException.ThrowIfNull(message);
 
+        // Bound concurrent in-flight ProduceAsync calls so a backed-up broker can't pile up unbounded pending tasks
+        // Acquire happens before GetProducerAsync, build is intentionally outside the cap (it's at most one builder thread)
+        try
+        {
+            await _inflightSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.KafkaProducerProduceAsyncInflightSemaphoreWaitCanceledInfo(topic);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.KafkaProducerProduceAsyncInflightSemaphoreWaitException(topic, ex);
+            throw;
+        }
+
         try
         {
             IProducer<string, TValue> producer = await GetProducerAsync(cancellationToken).ConfigureAwait(false);
@@ -163,6 +197,10 @@ public class KafkaProducerService<TValue> : IKafkaProducerService<TValue>
         {
             _logger.KafkaProducerProduceAsyncProduceException(topic, ex);
             throw;
+        }
+        finally
+        {
+            _ = _inflightSemaphore.Release();
         }
     }
 
@@ -212,7 +250,8 @@ public class KafkaProducerService<TValue> : IKafkaProducerService<TValue>
         // Local-dev / non-AWS clusters use SASL/SCRAM and must not run the AWS token refresh on every reconnect.
         if (producerConfig.SaslMechanism == SaslMechanism.OAuthBearer)
         {
-            _ = builder.SetOAuthBearerTokenRefreshHandler(_oauthHandlers.GetOauthBearerTokenRefreshHandler(_options.Region!));
+            // _oauthHandlers set when BootstrapServers is empty, same condition that selects OAuthBearer at config time
+            _ = builder.SetOAuthBearerTokenRefreshHandler(_oauthHandlers!.GetOauthBearerTokenRefreshHandler(_options.Region!));
         }
 
         return builder;
@@ -389,27 +428,41 @@ public static partial class KafkaProducerServiceLogs
 
     [LoggerMessage(
         EventId = 2010,
+        Level = LogLevel.Information,
+        Message = "KafkaProducerProduceAsync: inflight semaphore wait canceled for topic `{Topic}`")]
+    public static partial void KafkaProducerProduceAsyncInflightSemaphoreWaitCanceledInfo(
+        this ILogger logger, string topic);
+
+    [LoggerMessage(
+        EventId = 2020,
+        Level = LogLevel.Error,
+        Message = "KafkaProducerProduceAsync: inflight semaphore wait exception for topic `{Topic}`")]
+    public static partial void KafkaProducerProduceAsyncInflightSemaphoreWaitException(
+        this ILogger logger, string topic, Exception exception);
+
+    [LoggerMessage(
+        EventId = 2030,
         Level = LogLevel.Debug,
         Message = "KafkaProducerProduceAsync: produced message for topic `{Topic}`, partition `{Partition}` and offset `{Offset}`")]
     public static partial void KafkaProducerProduceAsyncProduceMessageDebug(
         this ILogger logger, string topic, int partition, long offset);
 
     [LoggerMessage(
-        EventId = 2020,
+        EventId = 2040,
         Level = LogLevel.Information,
         Message = "KafkaProducerProduceAsync: produce message canceled for topic `{Topic}`")]
     public static partial void KafkaProducerProduceAsyncProduceCanceledInfo(
         this ILogger logger, string topic);
 
     [LoggerMessage(
-        EventId = 2030,
+        EventId = 2050,
         Level = LogLevel.Error,
         Message = "KafkaProducerProduceAsync: produce exception when produce message for topic `{Topic}`")]
     public static partial void KafkaProducerProduceAsyncProduceProduceException(
         this ILogger logger, string topic, Exception exception);
 
     [LoggerMessage(
-        EventId = 2040,
+        EventId = 2060,
         Level = LogLevel.Error,
         Message = "KafkaProducerProduceAsync: exception when produce message for topic `{Topic}`")]
     public static partial void KafkaProducerProduceAsyncProduceException(
