@@ -2,9 +2,11 @@ using Dalmarkit.Common.Dtos.RequestDtos;
 
 namespace Dalmarkit.Common.Services.WebSocketServices;
 
-public interface IPublicClientWebSocketService : IDisposable
+public interface IClientWebSocketService : IDisposable
 {
-    Task ConnectAsync(CancellationToken cancellationToken = default);
+    string? AuthenticationId { get; }
+
+    Task ConnectAsync(string? authenticationId, CancellationToken cancellationToken = default);
     Task DisconnectAsync(CancellationToken cancellationToken = default);
     List<string> GetSubscribedChannels();
     Task SendNotificationAsync<TMessage>(TMessage message, CancellationToken cancellationToken = default);

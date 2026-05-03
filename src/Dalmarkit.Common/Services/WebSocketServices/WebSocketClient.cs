@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using Dalmarkit.Common.Dtos.RequestDtos;
 using Dalmarkit.Common.Events;
@@ -16,6 +17,8 @@ namespace Dalmarkit.Common.Services.WebSocketServices;
 
 public class WebSocketClient : IWebSocketClient
 {
+    public string? WebSocketName => _options.WebSocketName;
+
     public const int PendingRequestsInitialCapacity = 503;
 
     private readonly IEventDispatcher _eventDispatcher;
@@ -70,7 +73,10 @@ public class WebSocketClient : IWebSocketClient
 
     public WebSocketConnectionState ConnectionState => (WebSocketConnectionState)Volatile.Read(ref _connectionStateValue);
 
-    public static JsonSerializerOptions JsonWebOptions => JsonSerializerOptions.Web;
+    public static readonly JsonSerializerOptions JsonWebOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     public WebSocketClient(
         IEventDispatcher eventDispatcher,
@@ -242,7 +248,7 @@ public class WebSocketClient : IWebSocketClient
     public async Task<TResponse?> SendJsonRpc2RequestAsync<TParams, TResponse>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
         where TResponse : class
     {
-        return await SendRequestAsync<JsonRpc2RequestDto<TParams>, TResponse>(request.Id, request, cancellationToken);
+        return await SendRequestAsync<JsonRpc2RequestDto<TParams>, TResponse>(request.Id, request, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SendNotificationAsync<TMessage>(TMessage messageObject, CancellationToken cancellationToken = default)

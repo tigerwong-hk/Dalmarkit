@@ -7,6 +7,8 @@ using System.Net.Http.Json;
 using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+
 
 namespace Dalmarkit.Common.Services.HttpServices;
 
@@ -16,7 +18,10 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
     private readonly HttpClient _httpClient = Guard.NotNull(httpClient, nameof(httpClient));
     private readonly ILogger _logger = Guard.NotNull(logger, nameof(logger));
 
-    public static readonly JsonSerializerOptions WebOptions = new(JsonSerializerDefaults.Web);
+    public static readonly JsonSerializerOptions WebOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     public void Dispose()
     {
@@ -161,6 +166,53 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
 
             TErrorResponse? errorResponse = await JsonSerializer.DeserializeAsync<TErrorResponse>(
                 contentStream, WebOptions, cancellationToken);
+            if (errorResponse != null)
+            {
+                string errorMessage = JsonSerializer.Serialize(errorResponse, WebOptions);
+                _logger.ErrorResponseForError(requestUrl, jsonBody, httpResponse.StatusCode, errorMessage);
+                throw new HttpRequestException(errorMessage, null, httpResponse.StatusCode);
+            }
+        }
+
+        _ = httpResponse.EnsureSuccessStatusCode();
+
+        return await httpResponse.Content.ReadFromJsonAsync<TSuccessResponse>(WebOptions, cancellationToken);
+    }
+
+    public async Task<TSuccessResponse?> PostAsJsonWithHeadersAsync<TRequest, TErrorResponse, TSuccessResponse>(
+        Uri requestUrl, Dictionary<string, string>? requestHeaders, TRequest content, CancellationToken cancellationToken = default)
+        where TRequest : class
+        where TErrorResponse : class
+        where TSuccessResponse : class
+    {
+        string jsonBody = JsonSerializer.Serialize(content, WebOptions);
+        using StringContent jsonContent = new(
+            jsonBody,
+            Encoding.UTF8,
+            MediaTypeNames.Application.Json);
+
+        using HttpRequestMessage request = new(HttpMethod.Post, requestUrl)
+        {
+            Content = jsonContent,
+        };
+
+        if (requestHeaders?.Count > 0)
+        {
+            foreach (KeyValuePair<string, string> kvp in requestHeaders)
+            {
+                request.Headers.Add(kvp.Key, kvp.Value);
+            }
+        }
+
+        using HttpResponseMessage httpResponse =
+            await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
+
+        if (!httpResponse.IsSuccessStatusCode)
+        {
+            await using Stream contentStream =
+                await httpResponse.Content.ReadAsStreamAsync(cancellationToken);
+
+            TErrorResponse? errorResponse = await JsonSerializer.DeserializeAsync<TErrorResponse>(contentStream, WebOptions, cancellationToken);
             if (errorResponse != null)
             {
                 string errorMessage = JsonSerializer.Serialize(errorResponse, WebOptions);
