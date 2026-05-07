@@ -10,7 +10,7 @@
     <PackageReference Include="AWSSDK.CognitoIdentityProvider" Version="4.0.8.3" />
     <PackageReference Include="AWSSDK.Lambda" Version="4.0.15.2" />
     <PackageReference Include="AWSSDK.Route53" Version="4.0.8.23" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.22.2" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.23" />
     <PackageReference Include="AWSSDK.SecretsManager.Caching" Version="2.0.0" />
     <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.7.14" />
     <PackageReference Include="Riok.Mapperly" Version="4.3.1" />
