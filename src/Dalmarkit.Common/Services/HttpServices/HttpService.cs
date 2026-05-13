@@ -1,3 +1,4 @@
+using Dalmarkit.Common.Converters;
 using Dalmarkit.Common.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +21,11 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
 
     public static readonly JsonSerializerOptions WebOptions = new(JsonSerializerDefaults.Web)
     {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = {
+            new DecimalJsonConverter(),
+            new JsonStringEnumConverter(),
+        }
     };
 
     public void Dispose()
