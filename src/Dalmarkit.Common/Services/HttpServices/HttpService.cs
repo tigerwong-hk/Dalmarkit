@@ -1,3 +1,4 @@
+using Dalmarkit.Common.Converters;
 using Dalmarkit.Common.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +21,11 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
 
     public static readonly JsonSerializerOptions WebOptions = new(JsonSerializerDefaults.Web)
     {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = {
+            new DecimalJsonConverter(),
+            new JsonStringEnumConverter(),
+        }
     };
 
     public void Dispose()
@@ -123,6 +128,44 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
         where TSuccessResponse : class
     {
         using HttpResponseMessage httpResponse = await _httpClient.GetAsync(requestUrl, cancellationToken);
+
+        if (!httpResponse.IsSuccessStatusCode)
+        {
+            await using Stream contentStream =
+                await httpResponse.Content.ReadAsStreamAsync(cancellationToken);
+
+            TErrorResponse? errorResponse = await JsonSerializer.DeserializeAsync<TErrorResponse>(
+                contentStream, WebOptions, cancellationToken);
+            if (errorResponse != null)
+            {
+                string errorMessage = JsonSerializer.Serialize(errorResponse, WebOptions);
+                _logger.ErrorResponseForError(requestUrl, string.Empty, httpResponse.StatusCode, errorMessage);
+                throw new HttpRequestException(errorMessage, null, httpResponse.StatusCode);
+            }
+        }
+
+        _ = httpResponse.EnsureSuccessStatusCode();
+
+        return await httpResponse.Content.ReadFromJsonAsync<TSuccessResponse>(WebOptions, cancellationToken);
+    }
+
+    public async Task<TSuccessResponse?> GetFromJsonWithHeadersAsync<TErrorResponse, TSuccessResponse>(
+        Uri requestUrl, Dictionary<string, string>? requestHeaders, CancellationToken cancellationToken = default)
+        where TErrorResponse : class
+        where TSuccessResponse : class
+    {
+        using HttpRequestMessage request = new(HttpMethod.Get, requestUrl);
+
+        if (requestHeaders?.Count > 0)
+        {
+            foreach (KeyValuePair<string, string> kvp in requestHeaders)
+            {
+                request.Headers.Add(kvp.Key, kvp.Value);
+            }
+        }
+
+        using HttpResponseMessage httpResponse =
+            await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
 
         if (!httpResponse.IsSuccessStatusCode)
         {
