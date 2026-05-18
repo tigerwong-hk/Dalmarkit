@@ -238,6 +238,11 @@ public abstract class ClientWebSocketServiceBase(
         await ActiveWebSocketClient.DisconnectAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public virtual WebSocketConnectionState GetConnectionState()
+    {
+        return ActiveWebSocketClient.ConnectionState;
+    }
+
     public virtual List<string> GetSubscribedChannels()
     {
         return [.. _subscribedChannels.Keys];
