@@ -1,4 +1,5 @@
 using Dalmarkit.Common.Dtos.RequestDtos;
+using static Dalmarkit.Common.Services.WebSocketServices.IWebSocketClient;
 
 namespace Dalmarkit.Common.Services.WebSocketServices;
 
@@ -8,6 +9,7 @@ public interface IClientWebSocketService : IDisposable
 
     Task ConnectAsync(string? authenticationId, CancellationToken cancellationToken = default);
     Task DisconnectAsync(CancellationToken cancellationToken = default);
+    WebSocketConnectionState GetConnectionState();
     List<string> GetSubscribedChannels();
     Task SendNotificationAsync<TMessage>(TMessage message, CancellationToken cancellationToken = default);
     Task<TResponse?> SendRequestAsync<TParams, TResponse>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
