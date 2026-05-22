@@ -621,12 +621,12 @@ public abstract class ClientWebSocketServiceBase(
         }
         catch (OperationCanceledException)
         {
-            _logger.TrySetAuthenticationStateAsyncWaitSemaphoreCanceledInfo(key, newState.ToString());
+            _logger.TrySetAuthenticationStateAsyncWaitSemaphoreCanceledInfo(key, newState);
             return;
         }
         catch (ObjectDisposedException)
         {
-            _logger.TrySetAuthenticationStateAsyncWaitSemaphoreDisposedInfo(key, newState.ToString());
+            _logger.TrySetAuthenticationStateAsyncWaitSemaphoreDisposedInfo(key, newState);
             return;
         }
 
@@ -647,11 +647,11 @@ public abstract class ClientWebSocketServiceBase(
             }
             catch (OperationCanceledException)
             {
-                _logger.TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(key, newState.ToString());
+                _logger.TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(key, newState);
             }
             catch (Exception ex)
             {
-                _logger.TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(key, newState.ToString(), ex);
+                _logger.TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(key, newState, ex);
             }
         }
         finally
@@ -662,11 +662,11 @@ public abstract class ClientWebSocketServiceBase(
             }
             catch (ObjectDisposedException)
             {
-                _logger.TrySetAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(key, newState.ToString());
+                _logger.TrySetAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(key, newState);
             }
             catch (SemaphoreFullException ex)
             {
-                _logger.TrySetAuthenticationStateAsyncReleaseSemaphoreFullException(key, newState.ToString(), ex);
+                _logger.TrySetAuthenticationStateAsyncReleaseSemaphoreFullException(key, newState, ex);
             }
         }
     }
@@ -688,12 +688,12 @@ public abstract class ClientWebSocketServiceBase(
         }
         catch (OperationCanceledException)
         {
-            _logger.TryTransitionAuthenticationStateAsyncWaitSemaphoreCanceledInfo(key, expectedState.ToString(), newState.ToString());
+            _logger.TryTransitionAuthenticationStateAsyncWaitSemaphoreCanceledInfo(key, expectedState, newState);
             return false;
         }
         catch (ObjectDisposedException)
         {
-            _logger.TryTransitionAuthenticationStateAsyncWaitSemaphoreDisposedInfo(key, expectedState.ToString(), newState.ToString());
+            _logger.TryTransitionAuthenticationStateAsyncWaitSemaphoreDisposedInfo(key, expectedState, newState);
             return false;
         }
 
@@ -714,11 +714,11 @@ public abstract class ClientWebSocketServiceBase(
             }
             catch (OperationCanceledException)
             {
-                _logger.TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(key, expectedState.ToString(), newState.ToString());
+                _logger.TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(key, expectedState, newState);
             }
             catch (Exception ex)
             {
-                _logger.TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(key, expectedState.ToString(), newState.ToString(), ex);
+                _logger.TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(key, expectedState, newState, ex);
             }
 
             return true;
@@ -731,11 +731,11 @@ public abstract class ClientWebSocketServiceBase(
             }
             catch (ObjectDisposedException)
             {
-                _logger.TryTransitionAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(key, expectedState.ToString(), newState.ToString());
+                _logger.TryTransitionAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(key, expectedState, newState);
             }
             catch (SemaphoreFullException ex)
             {
-                _logger.TryTransitionAuthenticationStateAsyncReleaseSemaphoreFullException(key, expectedState.ToString(), newState.ToString(), ex);
+                _logger.TryTransitionAuthenticationStateAsyncReleaseSemaphoreFullException(key, expectedState, newState, ex);
             }
         }
     }
@@ -1219,84 +1219,84 @@ public static partial class ClientWebSocketServiceBaseLogs
         Level = LogLevel.Information,
         Message = "TrySetAuthenticationStateAsync: wait authentication state semaphore canceled for key `{Key}` with state `{AuthenticationState}`")]
     public static partial void TrySetAuthenticationStateAsyncWaitSemaphoreCanceledInfo(
-        this ILogger logger, string? key, string authenticationState);
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState);
 
     [LoggerMessage(
         EventId = 11020,
         Level = LogLevel.Information,
         Message = "TrySetAuthenticationStateAsync: wait authentication state semaphore disposed for key `{Key}` with state `{AuthenticationState}`")]
     public static partial void TrySetAuthenticationStateAsyncWaitSemaphoreDisposedInfo(
-        this ILogger logger, string? key, string authenticationState);
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState);
 
     [LoggerMessage(
         EventId = 11030,
         Level = LogLevel.Information,
         Message = "TrySetAuthenticationStateAsync: notify websocket authentication state canceled for key `{Key}` with state `{AuthenticationState}`")]
     public static partial void TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(
-        this ILogger logger, string? key, string authenticationState);
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState);
 
     [LoggerMessage(
         EventId = 11040,
         Level = LogLevel.Error,
         Message = "TrySetAuthenticationStateAsync: notify websocket authentication state exception for key `{Key}` with state `{AuthenticationState}`")]
     public static partial void TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(
-        this ILogger logger, string? key, string authenticationState, Exception exception);
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState, Exception exception);
 
     [LoggerMessage(
         EventId = 11050,
         Level = LogLevel.Information,
         Message = "TrySetAuthenticationStateAsync: release authentication state semaphore disposed for key `{Key}` with state `{AuthenticationState}`")]
     public static partial void TrySetAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(
-        this ILogger logger, string? key, string authenticationState);
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState);
 
     [LoggerMessage(
         EventId = 11060,
         Level = LogLevel.Information,
         Message = "TrySetAuthenticationStateAsync: release authentication state semaphore full exception for key `{Key}` with state `{AuthenticationState}`")]
     public static partial void TrySetAuthenticationStateAsyncReleaseSemaphoreFullException(
-        this ILogger logger, string? key, string authenticationState, Exception exception);
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState, Exception exception);
 
     [LoggerMessage(
         EventId = 12010,
         Level = LogLevel.Information,
         Message = "TryTransitionAuthenticationStateAsync: wait authentication state semaphore canceled for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
     public static partial void TryTransitionAuthenticationStateAsyncWaitSemaphoreCanceledInfo(
-        this ILogger logger, string? key, string expectedState, string newState);
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState);
 
     [LoggerMessage(
         EventId = 12020,
         Level = LogLevel.Information,
         Message = "TryTransitionAuthenticationStateAsync: wait authentication state semaphore disposed for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
     public static partial void TryTransitionAuthenticationStateAsyncWaitSemaphoreDisposedInfo(
-        this ILogger logger, string? key, string expectedState, string newState);
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState);
 
     [LoggerMessage(
         EventId = 12030,
         Level = LogLevel.Information,
         Message = "TryTransitionAuthenticationStateAsync: notify websocket authentication state canceled for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
     public static partial void TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(
-        this ILogger logger, string? key, string expectedState, string newState);
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState);
 
     [LoggerMessage(
         EventId = 12040,
         Level = LogLevel.Error,
         Message = "TryTransitionAuthenticationStateAsync: notify websocket authentication state exception for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
     public static partial void TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(
-        this ILogger logger, string? key, string expectedState, string newState, Exception exception);
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState, Exception exception);
 
     [LoggerMessage(
         EventId = 12050,
         Level = LogLevel.Information,
         Message = "TryTransitionAuthenticationStateAsync: release authentication semaphore disposed for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
     public static partial void TryTransitionAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(
-        this ILogger logger, string? key, string expectedState, string newState);
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState);
 
     [LoggerMessage(
         EventId = 12060,
         Level = LogLevel.Error,
         Message = "TryTransitionAuthenticationStateAsync: release authentication semaphore full exception for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
     public static partial void TryTransitionAuthenticationStateAsyncReleaseSemaphoreFullException(
-        this ILogger logger, string? key, string expectedState, string newState, Exception exception);
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState, Exception exception);
 
     [LoggerMessage(
         EventId = 13010,
