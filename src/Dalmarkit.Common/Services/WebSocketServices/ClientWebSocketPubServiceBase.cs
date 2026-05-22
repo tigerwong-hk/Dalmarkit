@@ -359,6 +359,23 @@ public abstract class ClientWebSocketPubServiceBase(
         }
     }
 
+    protected override async Task NotifyWebSocketAuthenticationStateAsync(WebSocketAuthenticationState webSocketAuthenticationState, string? key = default, CancellationToken cancellationToken = default)
+    {
+        string authenticationStateTopic = WebSocketClientTopics.GetAuthenticationStateTopic(WebSocketName);
+
+        AuthenticationStateEventDto authenticationStateEventDto = new(
+            webSocketAuthenticationState.ToString(),
+            DateTimeOffset.UtcNow);
+        try
+        {
+            await _topicPublisherService.PublishToTopicAsync(authenticationStateTopic, "Update", authenticationStateEventDto, key, null, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.NotifyWebSocketAuthenticationStateAsyncPublishToTopicException(authenticationStateTopic, webSocketAuthenticationState.ToString(), ex);
+        }
+    }
+
     protected override async Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState, string? key = default, CancellationToken cancellationToken = default)
     {
         string connectionStateTopic = WebSocketClientTopics.GetConnectionStateTopic(WebSocketName);
@@ -628,12 +645,19 @@ public static partial class ClientWebSocketPubServiceBaseLogs
     [LoggerMessage(
         EventId = 9010,
         Level = LogLevel.Error,
+        Message = "NotifyAuthenticationStateAsync: publish to topic exception for topic `{Topic}` and state `{AuthenticationState}`")]
+    public static partial void NotifyWebSocketAuthenticationStateAsyncPublishToTopicException(
+        this ILogger logger, string topic, string authenticationState, Exception exception);
+
+    [LoggerMessage(
+        EventId = 10010,
+        Level = LogLevel.Error,
         Message = "NotifyWebSocketConnectionState: publish to topic exception for topic `{Topic}` and state `{ConnectionState}`")]
     public static partial void NotifyWebSocketConnectionStatePublishToTopicException(
         this ILogger logger, string topic, string connectionState, Exception exception);
 
     [LoggerMessage(
-        EventId = 10010,
+        EventId = 11010,
         Level = LogLevel.Error,
         Message = "DisposeReceiveChannelMessagesTask: exception")]
     public static partial void DisposeReceiveChannelMessagesTaskException(
