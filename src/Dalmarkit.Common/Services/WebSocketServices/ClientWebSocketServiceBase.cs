@@ -21,6 +21,7 @@ public abstract class ClientWebSocketServiceBase(
     public const int SubscribedChannelsInitialCapacity = 8209;
 
     public string? AuthenticationId { get; private set; }
+    public bool IsAuthenticated => GetAuthenticationState() == WebSocketAuthenticationState.AuthenticationSuccessful;
     public string? WebSocketName => ActiveWebSocketClient.WebSocketName;
     internal IWebSocketClient ActiveWebSocketClient { get; } = webSocketClient ?? throw new ArgumentNullException(nameof(webSocketClient));
 
@@ -29,6 +30,9 @@ public abstract class ClientWebSocketServiceBase(
 
     private readonly ConcurrentDictionary<string, string> _subscribedChannels = new(Environment.ProcessorCount, SubscribedChannelsInitialCapacity);
     private readonly ConcurrentDictionary<string, Channel<WebSocketReceivedMessage<JsonNode>>> _notificationMessageTypes = new(Environment.ProcessorCount, SubscribedChannelsInitialCapacity);
+
+    private int _authenticationState = (int)WebSocketAuthenticationState.Unauthenticated;
+    private readonly SemaphoreSlim _authenticationStateSemaphore = new(1, 1);
 
     private int _hasSubscribedOnConnected;
     private bool HasSubscribedOnConnected => Volatile.Read(ref _hasSubscribedOnConnected) != 0;
@@ -68,6 +72,7 @@ public abstract class ClientWebSocketServiceBase(
 
         _disposalCts.Dispose();
 
+        _authenticationStateSemaphore.Dispose();
         _receiveSemaphore.Dispose();
 
         try
@@ -122,9 +127,20 @@ public abstract class ClientWebSocketServiceBase(
                 {
                     await AuthenticateSessionAsync(AuthenticationId, cancellationToken).ConfigureAwait(false);
                 }
+                catch (OperationCanceledException)
+                {
+                    _logger.HandleOnWebSocketConnectedAuthenticateSessionCanceledInfo(channelNames);
+                    return;
+                }
+                catch (ObjectDisposedException)
+                {
+                    _logger.HandleOnWebSocketConnectedAuthenticateSessionDisposedInfo(channelNames);
+                    return;
+                }
                 catch (Exception ex)
                 {
                     _logger.HandleOnWebSocketConnectedAuthenticateSessionException(channelNames, ex);
+                    await TrySetAuthenticationStateAsync(WebSocketAuthenticationState.AuthenticationFailed, AuthenticationId, cancellationToken).ConfigureAwait(false);
                     return;
                 }
             }
@@ -193,6 +209,12 @@ public abstract class ClientWebSocketServiceBase(
 
     public virtual async ValueTask Handle(WebSocketClientEvents.OnWebSocketDisconnected notification, CancellationToken cancellationToken = default)
     {
+        _ = await TryTransitionAuthenticationStateAsync(
+            WebSocketAuthenticationState.AuthenticationSuccessful,
+            WebSocketAuthenticationState.Disconnected,
+            AuthenticationId,
+            cancellationToken).ConfigureAwait(false);
+
         try
         {
             await NotifyWebSocketConnectionState(WebSocketConnectionState.Disconnected, AuthenticationId, cancellationToken).ConfigureAwait(false);
@@ -206,7 +228,6 @@ public abstract class ClientWebSocketServiceBase(
             _logger.HandleOnWebSocketDisconnectedNotifyWebSocketConnectionStateException(ex);
         }
 
-        AuthenticationId = null;
         _ = Interlocked.Exchange(ref _hasSubscribedOnConnected, 0);
         await ShutdownReceiveTextMessageTaskAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -236,6 +257,11 @@ public abstract class ClientWebSocketServiceBase(
     public virtual async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
         await ActiveWebSocketClient.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public virtual WebSocketAuthenticationState GetAuthenticationState()
+    {
+        return (WebSocketAuthenticationState)Volatile.Read(ref _authenticationState);
     }
 
     public virtual WebSocketConnectionState GetConnectionState()
@@ -587,6 +613,133 @@ public abstract class ClientWebSocketServiceBase(
         return channelsToRemove;
     }
 
+    protected virtual async Task TrySetAuthenticationStateAsync(WebSocketAuthenticationState newState, string? key = default, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _authenticationStateSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.TrySetAuthenticationStateAsyncWaitSemaphoreCanceledInfo(key, newState);
+            return;
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.TrySetAuthenticationStateAsyncWaitSemaphoreDisposedInfo(key, newState);
+            return;
+        }
+
+        int newValue = (int)newState;
+
+        try
+        {
+            if (Volatile.Read(ref _authenticationState) == newValue)
+            {
+                return;
+            }
+
+            Volatile.Write(ref _authenticationState, newValue);
+
+            try
+            {
+                await NotifyWebSocketAuthenticationStateAsync(newState, key, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(key, newState);
+            }
+            catch (Exception ex)
+            {
+                _logger.TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(key, newState, ex);
+            }
+        }
+        finally
+        {
+            try
+            {
+                _ = _authenticationStateSemaphore.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                _logger.TrySetAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(key, newState);
+            }
+            catch (SemaphoreFullException ex)
+            {
+                _logger.TrySetAuthenticationStateAsyncReleaseSemaphoreFullException(key, newState, ex);
+            }
+        }
+    }
+
+    protected virtual async Task<bool> TryTransitionAuthenticationStateAsync(
+        WebSocketAuthenticationState expectedState,
+        WebSocketAuthenticationState newState,
+        string? key = default,
+        CancellationToken cancellationToken = default)
+    {
+        if (expectedState == newState)
+        {
+            return false;
+        }
+
+        try
+        {
+            await _authenticationStateSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.TryTransitionAuthenticationStateAsyncWaitSemaphoreCanceledInfo(key, expectedState, newState);
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.TryTransitionAuthenticationStateAsyncWaitSemaphoreDisposedInfo(key, expectedState, newState);
+            return false;
+        }
+
+        int expectedValue = (int)expectedState;
+        int newValue = (int)newState;
+
+        try
+        {
+            int originalValue = Interlocked.CompareExchange(ref _authenticationState, newValue, expectedValue);
+            if (originalValue != expectedValue)
+            {
+                return false;
+            }
+
+            try
+            {
+                await NotifyWebSocketAuthenticationStateAsync(newState, key, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(key, expectedState, newState);
+            }
+            catch (Exception ex)
+            {
+                _logger.TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(key, expectedState, newState, ex);
+            }
+
+            return true;
+        }
+        finally
+        {
+            try
+            {
+                _ = _authenticationStateSemaphore.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                _logger.TryTransitionAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(key, expectedState, newState);
+            }
+            catch (SemaphoreFullException ex)
+            {
+                _logger.TryTransitionAuthenticationStateAsyncReleaseSemaphoreFullException(key, expectedState, newState, ex);
+            }
+        }
+    }
+
     protected virtual async Task<List<string>> UnsubscribeChannelsInternalAsync(List<string> channelNames, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
@@ -643,6 +796,8 @@ public abstract class ClientWebSocketServiceBase(
         return Task.CompletedTask;
     }
 
+    protected abstract Task NotifyWebSocketAuthenticationStateAsync(WebSocketAuthenticationState webSocketAuthenticationState, string? key = default, CancellationToken cancellationToken = default);
+
     protected abstract Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState, string? key = default, CancellationToken cancellationToken = default);
 
     protected abstract Task<bool> ProcessServerNotificationAsync(JsonNode messageJson, CancellationToken cancellationToken = default);
@@ -690,55 +845,69 @@ public static partial class ClientWebSocketServiceBaseLogs
 
     [LoggerMessage(
         EventId = 2040,
+        Level = LogLevel.Information,
+        Message = "HandleOnWebSocketConnected: authenticate session canceled for channels `{ChannelNames}`")]
+    public static partial void HandleOnWebSocketConnectedAuthenticateSessionCanceledInfo(
+        this ILogger logger, List<string> channelNames);
+
+    [LoggerMessage(
+        EventId = 2050,
+        Level = LogLevel.Information,
+        Message = "HandleOnWebSocketConnected: authenticate session disposed for channels `{ChannelNames}`")]
+    public static partial void HandleOnWebSocketConnectedAuthenticateSessionDisposedInfo(
+        this ILogger logger, List<string> channelNames);
+
+    [LoggerMessage(
+        EventId = 2060,
         Level = LogLevel.Error,
-        Message = "HandleOnWebSocketConnected: authenticate session exception for channels `${ChannelNames}`")]
+        Message = "HandleOnWebSocketConnected: authenticate session exception for channels `{ChannelNames}`")]
     public static partial void HandleOnWebSocketConnectedAuthenticateSessionException(
         this ILogger logger, List<string> channelNames, Exception exception);
 
     [LoggerMessage(
-        EventId = 2050,
+        EventId = 2070,
         Level = LogLevel.Error,
-        Message = "HandleOnWebSocketConnected: setup server heartbeat exception for channels `${ChannelNames}`")]
+        Message = "HandleOnWebSocketConnected: setup server heartbeat exception for channels `{ChannelNames}`")]
     public static partial void HandleOnWebSocketConnectedSetupServerHeartbeatException(
         this ILogger logger, List<string> channelNames, Exception exception);
 
     [LoggerMessage(
-        EventId = 2060,
+        EventId = 2080,
         Level = LogLevel.Information,
         Message = "HandleOnWebSocketConnected: subscribing to exchange channels `{ChannelNames}`")]
     public static partial void HandleOnWebSocketConnectedSubscribingExchangeChannelsInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 2070,
+        EventId = 2090,
         Level = LogLevel.Information,
         Message = "HandleOnWebSocketConnected: exchange channels not subscribed for channels `{ChannelNames}`: {NotSubscribedChannelNames}")]
     public static partial void HandleOnWebSocketConnectedNotSubscribedChannelsInfo(
         this ILogger logger, List<string> channelNames, List<string> notSubscribedChannelNames);
 
     [LoggerMessage(
-        EventId = 2080,
+        EventId = 2100,
         Level = LogLevel.Information,
         Message = "HandleOnWebSocketConnected: exchange channels all subscribed for channels `{ChannelNames}`")]
     public static partial void HandleOnWebSocketConnectedAllSubscribedChannelsInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 2090,
+        EventId = 2110,
         Level = LogLevel.Error,
         Message = "HandleOnWebSocketConnected: subscribe exchange channels exception for channels `{ChannelNames}`")]
     public static partial void HandleOnWebSocketConnectedSubscribeExchangeChannelsException(
         this ILogger logger, List<string> channelNames, Exception exception);
 
     [LoggerMessage(
-        EventId = 2100,
+        EventId = 2120,
         Level = LogLevel.Information,
         Message = "HandleOnWebSocketConnected: canceled for channels `{ChannelNames}`")]
     public static partial void HandleOnWebSocketConnectedCanceledInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 2110,
+        EventId = 2130,
         Level = LogLevel.Error,
         Message = "HandleOnWebSocketConnected: exception for channels `{ChannelNames}`")]
     public static partial void HandleOnWebSocketConnectedException(
@@ -1047,41 +1216,125 @@ public static partial class ClientWebSocketServiceBaseLogs
 
     [LoggerMessage(
         EventId = 11010,
+        Level = LogLevel.Information,
+        Message = "TrySetAuthenticationStateAsync: wait authentication state semaphore canceled for key `{Key}` with state `{AuthenticationState}`")]
+    public static partial void TrySetAuthenticationStateAsyncWaitSemaphoreCanceledInfo(
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState);
+
+    [LoggerMessage(
+        EventId = 11020,
+        Level = LogLevel.Information,
+        Message = "TrySetAuthenticationStateAsync: wait authentication state semaphore disposed for key `{Key}` with state `{AuthenticationState}`")]
+    public static partial void TrySetAuthenticationStateAsyncWaitSemaphoreDisposedInfo(
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState);
+
+    [LoggerMessage(
+        EventId = 11030,
+        Level = LogLevel.Information,
+        Message = "TrySetAuthenticationStateAsync: notify websocket authentication state canceled for key `{Key}` with state `{AuthenticationState}`")]
+    public static partial void TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState);
+
+    [LoggerMessage(
+        EventId = 11040,
+        Level = LogLevel.Error,
+        Message = "TrySetAuthenticationStateAsync: notify websocket authentication state exception for key `{Key}` with state `{AuthenticationState}`")]
+    public static partial void TrySetAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState, Exception exception);
+
+    [LoggerMessage(
+        EventId = 11050,
+        Level = LogLevel.Information,
+        Message = "TrySetAuthenticationStateAsync: release authentication state semaphore disposed for key `{Key}` with state `{AuthenticationState}`")]
+    public static partial void TrySetAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState);
+
+    [LoggerMessage(
+        EventId = 11060,
+        Level = LogLevel.Information,
+        Message = "TrySetAuthenticationStateAsync: release authentication state semaphore full exception for key `{Key}` with state `{AuthenticationState}`")]
+    public static partial void TrySetAuthenticationStateAsyncReleaseSemaphoreFullException(
+        this ILogger logger, string? key, WebSocketAuthenticationState authenticationState, Exception exception);
+
+    [LoggerMessage(
+        EventId = 12010,
+        Level = LogLevel.Information,
+        Message = "TryTransitionAuthenticationStateAsync: wait authentication state semaphore canceled for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
+    public static partial void TryTransitionAuthenticationStateAsyncWaitSemaphoreCanceledInfo(
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState);
+
+    [LoggerMessage(
+        EventId = 12020,
+        Level = LogLevel.Information,
+        Message = "TryTransitionAuthenticationStateAsync: wait authentication state semaphore disposed for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
+    public static partial void TryTransitionAuthenticationStateAsyncWaitSemaphoreDisposedInfo(
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState);
+
+    [LoggerMessage(
+        EventId = 12030,
+        Level = LogLevel.Information,
+        Message = "TryTransitionAuthenticationStateAsync: notify websocket authentication state canceled for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
+    public static partial void TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateCanceledInfo(
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState);
+
+    [LoggerMessage(
+        EventId = 12040,
+        Level = LogLevel.Error,
+        Message = "TryTransitionAuthenticationStateAsync: notify websocket authentication state exception for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
+    public static partial void TryTransitionAuthenticationStateAsyncNotifyWebSocketAuthenticationStateException(
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState, Exception exception);
+
+    [LoggerMessage(
+        EventId = 12050,
+        Level = LogLevel.Information,
+        Message = "TryTransitionAuthenticationStateAsync: release authentication semaphore disposed for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
+    public static partial void TryTransitionAuthenticationStateAsyncReleaseSemaphoreDisposedInfo(
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState);
+
+    [LoggerMessage(
+        EventId = 12060,
+        Level = LogLevel.Error,
+        Message = "TryTransitionAuthenticationStateAsync: release authentication semaphore full exception for key `{Key}` with expected state `{ExpectedState}` and new state `{NewState}`")]
+    public static partial void TryTransitionAuthenticationStateAsyncReleaseSemaphoreFullException(
+        this ILogger logger, string? key, WebSocketAuthenticationState expectedState, WebSocketAuthenticationState newState, Exception exception);
+
+    [LoggerMessage(
+        EventId = 13010,
         Level = LogLevel.Error,
         Message = "UnsubscribeChannelsInternalAsync: no channel names")]
     public static partial void UnsubscribeChannelsInternalAsyncNoChannelNamesError(
         this ILogger logger);
 
     [LoggerMessage(
-        EventId = 11020,
+        EventId = 13020,
         Level = LogLevel.Information,
         Message = "UnsubscribeChannelsInternalAsync: unsubscribing channels `{ChannelNames}`")]
     public static partial void UnsubscribeChannelsInternalAsyncUnsubscribingChannelsInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 11030,
+        EventId = 13030,
         Level = LogLevel.Information,
         Message = "UnsubscribeChannelsInternalAsync: not unsubscribed channels `{ChannelNames}`")]
     public static partial void UnsubscribeChannelsInternalAsyncChannelsNotUnsubscribedInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 11040,
+        EventId = 13040,
         Level = LogLevel.Information,
         Message = "UnsubscribeChannelsInternalAsync: unsubscribe exchange channels canceled for channels `{ChannelNames}`")]
     public static partial void UnsubscribeChannelsInternalAsyncUnsubscribeExchangeChannelsCanceledInfo(
         this ILogger logger, List<string> channelNames);
 
     [LoggerMessage(
-        EventId = 11050,
+        EventId = 13050,
         Level = LogLevel.Error,
         Message = "UnsubscribeChannelsInternalAsync: unsubscribe exchange channels exception for channels `{ChannelNames}`")]
     public static partial void UnsubscribeChannelsInternalAsyncUnsubscribeExchangeChannelsException(
         this ILogger logger, List<string> channelNames, Exception exception);
 
     [LoggerMessage(
-        EventId = 12010,
+        EventId = 14010,
         Level = LogLevel.Error,
         Message = "UnsubscribeExchangeChannelsAsync: send unsubscribe request exception for channels `{ChannelNames}`")]
     public static partial void UnsubscribeExchangeChannelsAsyncSendUnsubscribeRequestException(
