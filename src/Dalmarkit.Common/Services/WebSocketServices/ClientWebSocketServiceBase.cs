@@ -860,14 +860,14 @@ public static partial class ClientWebSocketServiceBaseLogs
     [LoggerMessage(
         EventId = 2060,
         Level = LogLevel.Error,
-        Message = "HandleOnWebSocketConnected: authenticate session exception for channels `${ChannelNames}`")]
+        Message = "HandleOnWebSocketConnected: authenticate session exception for channels `{ChannelNames}`")]
     public static partial void HandleOnWebSocketConnectedAuthenticateSessionException(
         this ILogger logger, List<string> channelNames, Exception exception);
 
     [LoggerMessage(
         EventId = 2070,
         Level = LogLevel.Error,
-        Message = "HandleOnWebSocketConnected: setup server heartbeat exception for channels `${ChannelNames}`")]
+        Message = "HandleOnWebSocketConnected: setup server heartbeat exception for channels `{ChannelNames}`")]
     public static partial void HandleOnWebSocketConnectedSetupServerHeartbeatException(
         this ILogger logger, List<string> channelNames, Exception exception);
 
