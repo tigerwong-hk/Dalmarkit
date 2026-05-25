@@ -248,6 +248,11 @@ public abstract class ClientWebSocketServiceBase(
         }
     }
 
+    public virtual async Task ConnectAsync(CancellationToken cancellationToken = default)
+    {
+        await ConnectAsync(null, cancellationToken);
+    }
+
     public virtual async Task ConnectAsync(string? authenticationId, CancellationToken cancellationToken = default)
     {
         AuthenticationId = authenticationId?.Trim();
