@@ -8,6 +8,7 @@ public interface IClientWebSocketService : IDisposable
     string? AuthenticationId { get; }
     bool IsAuthenticated { get; }
 
+    Task ConnectAsync(CancellationToken cancellationToken = default);
     Task ConnectAsync(string? authenticationId, CancellationToken cancellationToken = default);
     Task DisconnectAsync(CancellationToken cancellationToken = default);
     WebSocketAuthenticationState GetAuthenticationState();
