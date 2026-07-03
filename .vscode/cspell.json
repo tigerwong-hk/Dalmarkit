@@ -46,6 +46,7 @@
         "softprops",
         "solana",
         "srem",
+        "vwap",
         "webapi"
     ],
     "ignorePaths": [

@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalmarkit.EntityFrameworkCo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalmarkit.Messaging", "src\Dalmarkit.Messaging\Dalmarkit.Messaging.csproj", "{D9837D20-560F-44B1-BC66-8158E8A98776}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalmarkit.Trading", "src\Dalmarkit.Trading\Dalmarkit.Trading.csproj", "{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -99,6 +101,18 @@ Global
 		{D9837D20-560F-44B1-BC66-8158E8A98776}.Release|x64.Build.0 = Release|Any CPU
 		{D9837D20-560F-44B1-BC66-8158E8A98776}.Release|x86.ActiveCfg = Release|Any CPU
 		{D9837D20-560F-44B1-BC66-8158E8A98776}.Release|x86.Build.0 = Release|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Debug|x64.Build.0 = Debug|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Debug|x86.Build.0 = Debug|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Release|x64.ActiveCfg = Release|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Release|x64.Build.0 = Release|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Release|x86.ActiveCfg = Release|Any CPU
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -110,5 +124,6 @@ Global
 		{0E14861E-9FA3-4802-AF02-3DB2375D41A1} = {AEBC34C5-F957-4613-AD42-176DC64D58DD}
 		{0FE2B086-2D0C-4291-852B-24908A97ED91} = {AEBC34C5-F957-4613-AD42-176DC64D58DD}
 		{D9837D20-560F-44B1-BC66-8158E8A98776} = {AEBC34C5-F957-4613-AD42-176DC64D58DD}
+		{C9EBB000-4F4D-4D4D-919A-86FE2E7D8681} = {AEBC34C5-F957-4613-AD42-176DC64D58DD}
 	EndGlobalSection
 EndGlobal
