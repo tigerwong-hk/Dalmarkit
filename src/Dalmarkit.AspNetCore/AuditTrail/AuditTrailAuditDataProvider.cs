@@ -141,7 +141,8 @@ public class AuditTrailAuditDataProvider<TDbContext>(
         List<EventEntry> entries = efEvent?.Entries?.ToList() ?? [];
 
         using TDbContext dbContext = CreateAuditDbContext();
-        List<AuditLog> auditLogs = [.. dbContext.Set<AuditLog>().Where(auditLog => auditLogIds.Contains(auditLog.Id))];
+        // AsTracking: the update below relies on change tracking, which a NoTracking context default would otherwise disable.
+        List<AuditLog> auditLogs = [.. dbContext.Set<AuditLog>().AsTracking().Where(auditLog => auditLogIds.Contains(auditLog.Id))];
         if (RepopulateAuditLogs(auditLogs, auditLogIds, entries, auditEvent, efEvent))
         {
             _ = dbContext.SaveChanges();
@@ -159,7 +160,9 @@ public class AuditTrailAuditDataProvider<TDbContext>(
         List<EventEntry> entries = efEvent?.Entries?.ToList() ?? [];
 
         await using TDbContext dbContext = CreateAuditDbContext();
+        // AsTracking: the update below relies on change tracking, which a NoTracking context default would otherwise disable.
         List<AuditLog> auditLogs = await dbContext.Set<AuditLog>()
+            .AsTracking()
             .Where(auditLog => auditLogIds.Contains(auditLog.Id))
             .ToListAsync(cancellationToken);
         if (RepopulateAuditLogs(auditLogs, auditLogIds, entries, auditEvent, efEvent))
