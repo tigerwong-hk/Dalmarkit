@@ -27,7 +27,7 @@ public abstract class SignalRTopicHubBase(ITopicSubscriptionService subscription
         return topicsRemoved;
     }
 
-    public virtual async Task<bool> SubscribeTopicAsync(string topic)
+    protected virtual async Task<bool> SubscribeTopicAsync(string topic)
     {
         bool isSubscribed = _subscriptionService.SubscribeTopic(Context.ConnectionId, topic, GetTopicPrefix);
         if (isSubscribed)
@@ -38,7 +38,7 @@ public abstract class SignalRTopicHubBase(ITopicSubscriptionService subscription
         return isSubscribed;
     }
 
-    public virtual async Task<bool> UnsubscribeTopicAsync(string topic)
+    protected virtual async Task<bool> UnsubscribeTopicAsync(string topic)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, topic).ConfigureAwait(false);
         return _subscriptionService.UnsubscribeTopic(Context.ConnectionId, topic, GetTopicPrefix);
