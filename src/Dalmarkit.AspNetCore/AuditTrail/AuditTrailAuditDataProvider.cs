@@ -38,11 +38,9 @@ public class AuditTrailAuditDataProvider<TDbContext>(
     private const string TraceId = nameof(LogEntityBase.TraceId);
     private const string UserId = nameof(LogEntityBase.UserId);
 
-    private static readonly Func<DbContextOptions<TDbContext>, TDbContext> DefaultContextFactory = BuildDefaultContextFactory();
-
     private readonly PostgreSqlDataProvider ApiLogProvider = ConfigureApiLogProvider(connectionString);
     private readonly DbContextOptions<TDbContext> _dbContextOptions = dbContextOptions;
-    private readonly Func<DbContextOptions<TDbContext>, TDbContext> _contextFactory = contextFactory ?? DefaultContextFactory;
+    private readonly Func<DbContextOptions<TDbContext>, TDbContext> _contextFactory = contextFactory ?? BuildDefaultContextFactory();
 
     public override object InsertEvent(AuditEvent auditEvent)
     {
@@ -247,9 +245,9 @@ public class AuditTrailAuditDataProvider<TDbContext>(
 
     private static Func<DbContextOptions<TDbContext>, TDbContext> BuildDefaultContextFactory()
     {
-        // Resolve the standard EF DbContextOptions constructor once and compile a delegate over it. The throwing
-        // fallback is deferred to invocation (not thrown here) so that a consumer whose context has no such
-        // constructor can still supply an explicit factory to AddAuditTrail without tripping this static initializer.
+        // Resolve the standard EF DbContextOptions constructor and compile a delegate over it. Only invoked when the
+        // caller supplied no explicit factory, so an AOT/trimming caller that passes one never reaches Expression.Compile.
+        // A context without such a constructor yields a deferred-throwing factory with a clear "supply a factory" message.
         ConstructorInfo? constructor = typeof(TDbContext).GetConstructor([typeof(DbContextOptions<TDbContext>)])
             ?? typeof(TDbContext).GetConstructor([typeof(DbContextOptions)]);
         if (constructor is null)
