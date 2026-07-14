@@ -29,7 +29,7 @@ namespace Dalmarkit.AspNetCore.AuditTrail;
 public class AuditTrailAuditDataProvider<TDbContext>(
     string connectionString,
     DbContextOptions<TDbContext> dbContextOptions,
-    Func<DbContextOptions<TDbContext>, TDbContext>? contextFactory = null) : AuditDataProvider
+    Func<DbContextOptions<TDbContext>, TDbContext>? contextFactory) : AuditDataProvider
     where TDbContext : DbContext
 {
     private const string DurationMsec = nameof(LogEntityBase.DurationMsec);
@@ -41,6 +41,18 @@ public class AuditTrailAuditDataProvider<TDbContext>(
     private readonly PostgreSqlDataProvider ApiLogProvider = ConfigureApiLogProvider(connectionString);
     private readonly DbContextOptions<TDbContext> _dbContextOptions = dbContextOptions;
     private readonly Func<DbContextOptions<TDbContext>, TDbContext> _contextFactory = contextFactory ?? BuildDefaultContextFactory();
+
+    /// <summary>
+    /// Backward-compatible constructor that uses the default (reflection-compiled) context factory. Kept as an explicit
+    /// overload — not an optional parameter on the primary constructor — so the original two-argument signature stays in
+    /// metadata and already-compiled consumers do not break on upgrade.
+    /// </summary>
+    /// <param name="connectionString">Connection string for the <c>ApiLogs</c> PostgreSQL provider.</param>
+    /// <param name="dbContextOptions">Options used to construct a dedicated context for writing <c>AuditLogs</c>.</param>
+    public AuditTrailAuditDataProvider(string connectionString, DbContextOptions<TDbContext> dbContextOptions)
+        : this(connectionString, dbContextOptions, null)
+    {
+    }
 
     public override object InsertEvent(AuditEvent auditEvent)
     {
