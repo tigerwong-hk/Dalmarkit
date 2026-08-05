@@ -32,7 +32,7 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         }
     }
 
-    public async Task<string?> AdminCreateUserAsync(string identityProviderId, string emailAddress, string phoneNumber, bool resendInvitationMessage = false)
+    public async Task<string?> AdminCreateUserAsync(string identityProviderId, string emailAddress, string phoneNumber, bool resendInvitationMessage = false, Dictionary<string, string>? clientMetadata = null)
     {
         _ = Guard.NotNullOrWhiteSpace(identityProviderId, nameof(identityProviderId));
         _ = Guard.NotNullOrWhiteSpace(emailAddress, nameof(emailAddress));
@@ -59,6 +59,11 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         if (resendInvitationMessage)
         {
             request.MessageAction = MessageActionType.RESEND;
+        }
+
+        if (clientMetadata?.Count > 0)
+        {
+            request.ClientMetadata = clientMetadata;
         }
 
         AdminCreateUserResponse response = await _cognitoService.AdminCreateUserAsync(request);
@@ -171,9 +176,9 @@ public class AwsCognitoService(IAmazonCognitoIdentityProvider cognitoService, IL
         }
     }
 
-    public async Task<string?> AdminResendInvitationMessageAsync(string identityProviderId, string emailAddress, string phoneNumber)
+    public async Task<string?> AdminResendInvitationMessageAsync(string identityProviderId, string emailAddress, string phoneNumber, Dictionary<string, string>? clientMetadata = null)
     {
-        return await AdminCreateUserAsync(identityProviderId, emailAddress, phoneNumber, true);
+        return await AdminCreateUserAsync(identityProviderId, emailAddress, phoneNumber, true, clientMetadata);
     }
 
     public async Task AdminUpdateUserAsync(string identityProviderId, string emailAddress, string phoneNumber, string username)
