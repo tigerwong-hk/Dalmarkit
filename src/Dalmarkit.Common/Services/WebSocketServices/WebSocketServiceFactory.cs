@@ -371,12 +371,20 @@ public class WebSocketServiceFactory<TService> : IWebSocketServiceFactory<TServi
             : throw new KeyNotFoundException($"No connected websocket service for websocket id `{webSocketId}`");
     }
 
-    public List<string> GetWebSocketIds()
+    public IReadOnlyList<string> GetWebSocketIds()
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        ICollection<string> webSocketIds = _serviceEntries.Keys;
+        List<string> webSocketIds = [];
 
-        return webSocketIds is null ? [] : [.. webSocketIds.OrderBy(s => s, StringComparer.Ordinal)];
+        foreach ((string? webSocketId, ServiceEntry? serviceEntry) in _serviceEntries)
+        {
+            if (serviceEntry.Service != null)
+            {
+                webSocketIds.Add(webSocketId);
+            }
+        }
+
+        return [.. webSocketIds.OrderBy(s => s, StringComparer.Ordinal)];
     }
 
     public bool TryGetService(string webSocketId, out TService? service)

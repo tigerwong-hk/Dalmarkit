@@ -6,6 +6,6 @@ public interface IWebSocketServiceFactory<TService> : IDisposable
     Task<TService> ConnectAsync(string webSocketId, CancellationToken cancellationToken = default);
     Task DisconnectAsync(string webSocketId, CancellationToken cancellationToken = default);
     TService GetService(string webSocketId);
-    List<string> GetWebSocketIds();
+    IReadOnlyList<string> GetWebSocketIds();
     bool TryGetService(string webSocketId, out TService? service);
 }
