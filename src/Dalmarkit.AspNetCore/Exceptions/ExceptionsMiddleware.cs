@@ -44,7 +44,7 @@ public class ExceptionsMiddleware
         {
             if (_logger.IsEnabled(LogLevel.Debug))
             {
-                _logger.RequestCanceledByClient(context.Request.Path);
+                _logger.RequestCanceledByClient(context.Request.Method, context.Request.Path);
             }
         }
         catch (DbUpdateConcurrencyException ex)
@@ -124,8 +124,8 @@ public static partial class ExceptionMiddlewareLogs
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Debug,
-        Message = "Request to `{RequestPath}` was canceled by the client; no response written")]
-    public static partial void RequestCanceledByClient(this ILogger logger, string requestPath);
+        Message = "Request was canceled by the client so no response written for `{Method} {RequestPath}`")]
+    public static partial void RequestCanceledByClient(this ILogger logger, string method, string requestPath);
 
     [LoggerMessage(
         EventId = 0,
