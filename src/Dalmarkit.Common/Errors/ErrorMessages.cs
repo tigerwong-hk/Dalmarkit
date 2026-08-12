@@ -25,6 +25,7 @@ public static class ErrorMessages
 
     public static class ModelStateErrors
     {
+        public const string ElementNull = "{0} cannot contain null elements";
         public const string ElementsTooFew = "{0} has too few elements, require at least {1} element(s)";
         public const string ElementsTooMany = "{0} has too many elements, accept at most {1} element(s)";
         public const string FieldRequired = "Required field unspecified: {0}";
