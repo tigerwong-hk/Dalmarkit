@@ -27,6 +27,26 @@ public class ExceptionsMiddleware
         {
             await _next(context);
         }
+        // The caller went away: not a fault, so no Error log, no stack trace and no response - the socket
+        // is already closed. Ordinary traffic on a public API (closed tab, backgrounded app, LB timeout).
+        //
+        // The `when` clause is load-bearing. Only an OperationCanceledException raised while
+        // RequestAborted is signalled means the CLIENT left. One from an internal timeout or a linked
+        // token is a real fault and must keep the 500 below; an unfiltered catch here would bury it.
+        // TaskCanceledException derives from OperationCanceledException, so this covers both.
+        //
+        // Deliberately not rethrown. Re-throwing hands the exception to whatever wrapped this middleware -
+        // typically request logging - which reports it as a failed request, reintroducing the noise this
+        // clause removes. No status code is set either: the response never reaches anyone, ASP.NET Core
+        // has no client-closed status (499 is nginx-specific), and inventing one would misreport the
+        // request to every consumer's audit trail.
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.RequestCanceledByClient(context.Request.Path);
+            }
+        }
         catch (DbUpdateConcurrencyException ex)
         {
             if (context.Response.HasStarted)
@@ -100,6 +120,12 @@ public static partial class ExceptionMiddlewareLogs
         Message = "Unhandled exception caught with message `{Message}` and inner exception `{InnerException}`: {StackTrace}")]
     public static partial void CaughtUnhandledException(
         this ILogger logger, string message, string? innerException, string? stackTrace);
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Debug,
+        Message = "Request to `{RequestPath}` was canceled by the client; no response written")]
+    public static partial void RequestCanceledByClient(this ILogger logger, string requestPath);
 
     [LoggerMessage(
         EventId = 0,
