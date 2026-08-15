@@ -14,6 +14,7 @@ public class WebSocketClientOptions
     public int ReceiveBinaryChannelCapacity { get; set; } = 8192;
     public int ReceiveTextChannelCapacity { get; set; } = 8192;
     public ReconnectionPolicy? Reconnection { get; set; }
+    public string RequestIdPropertyName { get; set; } = "id";
     public int RequestTimeoutMilliseconds { get; set; } = 10000;
     public int ResponseTimeoutMilliseconds { get; set; } = 30000;
     public required string ServerUrl { get; set; }
