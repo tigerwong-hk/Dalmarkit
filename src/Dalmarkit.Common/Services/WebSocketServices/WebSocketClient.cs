@@ -724,7 +724,7 @@ public class WebSocketClient : IWebSocketClient
 
     protected virtual string? GetRequestIdFromResponse(JsonNode jsonNode)
     {
-        return (string?)jsonNode["id"];
+        return (string?)jsonNode[_options.RequestIdPropertyName];
     }
 
     protected virtual async Task HandleDisconnectionAsync(long connectionId, string? statusDescription, CancellationToken cancellationToken = default)
