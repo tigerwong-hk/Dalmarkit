@@ -80,6 +80,8 @@ public class WebSocketClientOptions
             throw new ArgumentException("Reconnect delay must be positive", nameof(Reconnection.DelayMilliseconds));
         }
 
+        _ = Guard.NotNullOrWhiteSpace(RequestIdPropertyName, nameof(RequestIdPropertyName));
+
         if (RequestTimeoutMilliseconds < 0)
         {
             throw new ArgumentException("Request timeout must be non-negative", nameof(RequestTimeoutMilliseconds));
