@@ -42,6 +42,19 @@ public class ExceptionsMiddleware
         // request to every consumer's audit trail.
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
+            // Response.StatusCode has a second reader: request-logging middleware inspects it after the
+            // pipeline unwinds, for both the logged status and the log level. Left unset it keeps its
+            // default 200, so an aborted request is logged as a SUCCESS. Nothing is transmitted here - the
+            // socket is closed - so this is a reporting fix, not a wire change.
+            //
+            // 499 specifically, because Kestrel already logs 499 for this same condition, and because it
+            // sits one below the >499 threshold that request-logging middleware uses to escalate to Error -
+            // so this cannot reintroduce the fault-level noise this clause exists to remove.
+            if (!context.Response.HasStarted)
+            {
+                context.Response.StatusCode = StatusCodes.Status499ClientClosedRequest;
+            }
+
             if (_logger.IsEnabled(LogLevel.Debug))
             {
                 _logger.RequestCanceledByClient(context.Request.Method, context.Request.Path);
@@ -112,7 +125,7 @@ public class ExceptionsMiddleware
     }
 }
 
-public static partial class ExceptionMiddlewareLogs
+public static partial class ExceptionsMiddlewareLogs
 {
     [LoggerMessage(
         EventId = 1,
