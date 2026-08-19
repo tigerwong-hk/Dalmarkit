@@ -37,9 +37,7 @@ public class ExceptionsMiddleware
         //
         // Deliberately not rethrown. Re-throwing hands the exception to whatever wrapped this middleware -
         // typically request logging - which reports it as a failed request, reintroducing the noise this
-        // clause removes. No status code is set either: the response never reaches anyone, ASP.NET Core
-        // has no client-closed status (499 is nginx-specific), and inventing one would misreport the
-        // request to every consumer's audit trail.
+        // clause removes.
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             // Response.StatusCode has a second reader: request-logging middleware inspects it after the
