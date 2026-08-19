@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Dalmarkit.AspNetCore.AuditTrail;
 
-public static class AuditLogServiceCollectionExtensions
+public static class AuditTrailServiceCollectionExtensions
 {
     /// <summary>
     /// Add audit trail
