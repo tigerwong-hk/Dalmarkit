@@ -32,6 +32,20 @@ public static class AuditTrailApplicationBuilderExtensions
             if (scope.Event is AuditEventWebApi)
             {
                 AuditApiAction auditAction = scope.Event.GetWebApiAuditAction();
+
+                // Audit.WebApi records 500 whenever the action threw, and a client abort throws
+                // OperationCanceledException - so an abandoned request is currently audited as a server
+                // fault. The caller left; match the 499 ExceptionsMiddleware sets and Kestrel logs.
+                //
+                // Assigned BEFORE the reads below on purpose: the ApiLogs column, the Status flag and the
+                // LogDetail JSONB copy of the action all derive from this one property, so one assignment
+                // fixes all three and nothing else in this method changes.
+                if (httpContext?.RequestAborted.IsCancellationRequested == true)
+                {
+                    auditAction.ResponseStatusCode = StatusCodes.Status499ClientClosedRequest;
+                    auditAction.ResponseStatus = "Client Closed Request";
+                }
+
                 scope.Event.CustomFields[nameof(ApiLog.ActionName)] = auditAction.ActionName;
                 scope.Event.CustomFields[nameof(ApiLog.ResponseStatusCode)] = auditAction.ResponseStatusCode;
                 scope.Event.CustomFields[nameof(LogEntityBase.Status)] = auditAction.ResponseStatusCode is >= (int)HttpStatusCode.OK and < (int)HttpStatusCode.Ambiguous;
