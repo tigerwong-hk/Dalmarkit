@@ -42,6 +42,7 @@
         "roslynator",
         "sasl",
         "scard",
+        "serilog",
         "smembers",
         "sigr",
         "softprops",
