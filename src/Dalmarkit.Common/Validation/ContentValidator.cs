@@ -81,7 +81,7 @@ public static class ContentValidator
     }
 }
 
-public static partial class ContentInspectorHelperLogs
+public static partial class ContentValidatorLogs
 {
     [LoggerMessage(
         EventId = 0,
