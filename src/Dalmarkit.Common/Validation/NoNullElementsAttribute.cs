@@ -28,9 +28,9 @@ namespace Dalmarkit.Common.Validation;
 /// MVC validator already recurses into them.
 /// </para>
 /// <para>
-/// Cyclic graphs terminate — a sequence already inspected in the current call is not re-entered — and
-/// <see cref="MaxDepth"/> bounds the work regardless. Set <see cref="MaxDepth"/> to 1 to restore the
-/// shallow, top-level-only behaviour of 0.9.12 through 0.9.16.
+/// Cyclic graphs terminate — a sequence already inspected at the same or a shallower depth in the current
+/// call is not re-entered — and <see cref="MaxDepth"/> bounds the work regardless. Set
+/// <see cref="MaxDepth"/> to 1 to restore the shallow, top-level-only behaviour of 0.9.12 through 0.9.16.
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter, AllowMultiple = false)]
@@ -83,11 +83,11 @@ public class NoNullElementsAttribute : ValidationAttribute
             return true;
         }
 
-        HashSet<object>? visited = null;
+        Dictionary<object, int>? visited = null;
         return IsValidSequence(enumerable, 0, MaxDepth, ref visited);
     }
 
-    private static bool IsValidSequence(IEnumerable sequence, int depth, int maxDepth, ref HashSet<object>? visited)
+    private static bool IsValidSequence(IEnumerable sequence, int depth, int maxDepth, ref Dictionary<object, int>? visited)
     {
         // Fail OPEN past the bound: a payload nested deeper than any real DTO is a caller problem for the
         // JSON reader's own depth limit to refuse, and reporting "cannot contain null elements" for a
@@ -105,15 +105,28 @@ public class NoNullElementsAttribute : ValidationAttribute
         }
 
         // Only nested sequences can close a cycle, so the top level needs no bookkeeping and the common
-        // flat-collection case allocates nothing. A sequence already inspected was necessarily valid —
-        // an invalid one short-circuits the whole call — so skipping a repeat is safe as well as cheap.
+        // flat-collection case allocates nothing. A sequence already inspected was necessarily valid — an
+        // invalid one short-circuits the whole call — so skipping a repeat is safe as well as cheap.
+        //
+        // The DEPTH has to be part of that memo, not just the identity. MaxDepth truncates, so how much of
+        // a sequence was actually inspected depends on the depth it was reached at, and a shared sequence
+        // can be reached at two different depths: the deeper visit may have had its children cut off at
+        // the bound while the shallower one still has budget to descend into them. Remembering only "seen"
+        // would let the deeper, more truncated visit suppress the shallower, more thorough one and miss a
+        // null that is inside the bound. So re-enter whenever this visit is strictly shallower than the
+        // best one so far, and record the new best.
+        //
+        // Still terminates: depth rises by one per level, so a cycle re-enters at a GREATER depth and is
+        // skipped, and a sequence can improve its recorded depth at most MaxDepth times.
         if (depth > 0)
         {
-            visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
-            if (!visited.Add(sequence))
+            visited ??= new Dictionary<object, int>(ReferenceEqualityComparer.Instance);
+            if (visited.TryGetValue(sequence, out int inspectedAtDepth) && inspectedAtDepth <= depth)
             {
                 return true;
             }
+
+            visited[sequence] = depth;
         }
 
         // Enumerating a Dictionary<TKey, TValue> yields KeyValuePair<,> STRUCTS, which are never null, so
@@ -172,7 +185,7 @@ public class NoNullElementsAttribute : ValidationAttribute
         return true;
     }
 
-    private static bool IsValidElement(object? element, int depth, int maxDepth, ref HashSet<object>? visited)
+    private static bool IsValidElement(object? element, int depth, int maxDepth, ref Dictionary<object, int>? visited)
     {
         if (element is null)
         {
