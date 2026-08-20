@@ -1,6 +1,5 @@
 using Dalmarkit.Common.Errors;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 
@@ -40,8 +39,6 @@ public class NoNullElementsAttribute : ValidationAttribute
     /// The default nesting depth inspected when <see cref="MaxDepth"/> is not set.
     /// </summary>
     public const int DefaultMaxDepth = 32;
-
-    private static readonly ConcurrentDictionary<Type, bool> CanContainNullCache = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NoNullElementsAttribute"/> class.
@@ -149,9 +146,9 @@ public class NoNullElementsAttribute : ValidationAttribute
         // projection — never reaches the IDictionary branch above, so the pair is unwrapped below and the
         // same half inspected. The accessor is resolved once per run of like-typed elements rather than
         // once per element, because the reflective read dominates this path and a bound sequence is
-        // uniformly typed in every shape MVC can produce. A LOCAL, deliberately: a static
-        // Dictionary<Type, PropertyInfo> would root every element type it ever saw for the life of the
-        // process — blocking AssemblyLoadContext unload — to save less than this hoist does. Accessor
+        // uniformly typed in every shape MVC can produce. A LOCAL, deliberately: this class keeps
+        // NO static Type-keyed state, because holding a Type roots its assembly and blocks
+        // AssemblyLoadContext unload — see CanContainNull below. Accessor
         // resolution plus read, measured in isolation over 1,000,000 pairs: 35.8 ms resolving per element,
         // 30.6 ms with a static Type-keyed cache, 17.8 ms resolving once as below.
         Type? pairType = null;
@@ -204,25 +201,30 @@ public class NoNullElementsAttribute : ValidationAttribute
 
     private static bool CanContainNull(Type sequenceType)
     {
-        return CanContainNullCache.GetOrAdd(sequenceType, static type =>
+        // Recomputed per sequence rather than memoized in a static Type-keyed dictionary, for the same
+        // reason the KeyValuePair accessor above is a local: a process-wide cache holds a strong reference
+        // to every sequence type it ever saw — List<SomePluginDto> included — rooting that type and its
+        // assembly for the life of the process and blocking AssemblyLoadContext unload. Measured at 115 ns
+        // and 82 bytes per call against 21 ns for a cached lookup, and it runs ONCE PER SEQUENCE, not per
+        // element: ~95 ns to keep a collectible assembly collectible. If a payload ever nests enough
+        // collections for that to register, memoize in a local for the duration of one IsValid call —
+        // never across calls.
+        Type? elementType = GetElementType(sequenceType);
+        if (elementType is null)
         {
-            Type? elementType = GetElementType(type);
-            if (elementType is null)
-            {
-                // A non-generic IEnumerable (ArrayList, a hand-rolled iterator) says nothing about its
-                // elements, so it has to be walked.
-                return true;
-            }
+            // A non-generic IEnumerable (ArrayList, a hand-rolled iterator) says nothing about its
+            // elements, so it has to be walked.
+            return true;
+        }
 
-            if (!elementType.IsValueType || Nullable.GetUnderlyingType(elementType) is not null)
-            {
-                return true;
-            }
+        if (!elementType.IsValueType || Nullable.GetUnderlyingType(elementType) is not null)
+        {
+            return true;
+        }
 
-            // A struct element is not null, but it can still CARRY one: KeyValuePair<,> holds a value and
-            // ImmutableArray<T> is a struct that is itself a sequence.
-            return IsKeyValuePair(elementType) || typeof(IEnumerable).IsAssignableFrom(elementType);
-        });
+        // A struct element is not null, but it can still CARRY one: KeyValuePair<,> holds a value and
+        // ImmutableArray<T> is a struct that is itself a sequence.
+        return IsKeyValuePair(elementType) || typeof(IEnumerable).IsAssignableFrom(elementType);
     }
 
     private static Type? GetElementType(Type sequenceType)
