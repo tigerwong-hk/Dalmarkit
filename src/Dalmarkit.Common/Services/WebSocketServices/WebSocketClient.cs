@@ -62,7 +62,7 @@ public class WebSocketClient : IWebSocketClient
     private volatile int _reconnectAttempts;
 
     private int _connectionStateValue = (int)WebSocketConnectionState.Disconnected;
-    private volatile Func<string>? _getWebSocketServerUrl;
+    private volatile Func<WebSocketConnectAttempt, CancellationToken, ValueTask<string>>? _getWebSocketServerUrlAsync;
 
     public bool IsConnectionConnected => ConnectionState == WebSocketConnectionState.Connected;
     public bool IsWebSocketConnected => _clientWebSocket?.State == WebSocketState.Open;
@@ -153,10 +153,20 @@ public class WebSocketClient : IWebSocketClient
 
     public virtual async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
+        // Through the legacy overload, so a subclass that overrides it still handles this call
         await ConnectAsync(null, cancellationToken).ConfigureAwait(false);
     }
 
     public virtual async Task ConnectAsync(Func<string>? getWebSocketServerUrl = null, CancellationToken cancellationToken = default)
+    {
+        Func<WebSocketConnectAttempt, CancellationToken, ValueTask<string>>? getWebSocketServerUrlAsync = getWebSocketServerUrl == null
+            ? null
+            : (_, _) => ValueTask.FromResult(getWebSocketServerUrl());
+
+        await ConnectWithServerUrlFactoryAsync(getWebSocketServerUrlAsync, cancellationToken).ConfigureAwait(false);
+    }
+
+    public virtual async Task ConnectWithServerUrlFactoryAsync(Func<WebSocketConnectAttempt, CancellationToken, ValueTask<string>>? getWebSocketServerUrlAsync, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
 
@@ -179,7 +189,7 @@ public class WebSocketClient : IWebSocketClient
             _logger.ConnectDispatchConnectingEventException(_options.ServerUrl, ConnectionState, ex);
         }
 
-        _getWebSocketServerUrl = getWebSocketServerUrl;
+        _getWebSocketServerUrlAsync = getWebSocketServerUrlAsync;
 
         try
         {
@@ -310,11 +320,12 @@ public class WebSocketClient : IWebSocketClient
         while (_isDisposed == 0 && (policy.MaxAttempts < 0 || _reconnectAttempts < policy.MaxAttempts))
         {
             int reconnectAttempts = Interlocked.Increment(ref _reconnectAttempts);
-            _logger.AttemptReconnectDelayAttemptsInfo(_options.ServerUrl, policy.DelayMilliseconds, reconnectAttempts, policy.MaxAttempts);
+            int delayMilliseconds = policy.GetDelayMilliseconds(reconnectAttempts);
+            _logger.AttemptReconnectDelayAttemptsInfo(_options.ServerUrl, delayMilliseconds, reconnectAttempts, policy.MaxAttempts);
 
             try
             {
-                await Task.Delay(policy.DelayMilliseconds, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(delayMilliseconds, cancellationToken).ConfigureAwait(false);
                 await ConnectInternalAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -536,15 +547,27 @@ public class WebSocketClient : IWebSocketClient
         long connectionId;
         try
         {
-            string webSocketServerUrl = _getWebSocketServerUrl == null ? _options.ServerUrl : _getWebSocketServerUrl();
+            // Read once: ConnectWithServerUrlFactoryAsync can replace the factory while this attempt runs
+            Func<WebSocketConnectAttempt, CancellationToken, ValueTask<string>>? getWebSocketServerUrlAsync = _getWebSocketServerUrlAsync;
+            // _reconnectAttempts is reset only by a successful connect, so after the reconnection loop gives up it still
+            // holds the last attempt number; a new manual connect is attempt 0
+            bool isReconnect = ConnectionState == WebSocketConnectionState.Reconnecting;
+            string webSocketServerUrl = getWebSocketServerUrlAsync == null
+                ? _options.ServerUrl
+                : await getWebSocketServerUrlAsync(
+                    new WebSocketConnectAttempt(isReconnect ? _reconnectAttempts : 0, isReconnect),
+                    connectionTimeoutCts.Token).ConfigureAwait(false);
             await _clientWebSocket.ConnectAsync(new Uri(webSocketServerUrl), connectionTimeoutCts.Token).ConfigureAwait(false);
 
             _logger.ConnectInternalConnectedToWebSocketInfo(_options.ServerUrl, _reconnectAttempts, maxAttempts);
 
             lock (_connectionLock)
             {
-                if (!TryConnectionStateTransition(WebSocketConnectionState.Connecting, WebSocketConnectionState.Connected) &&
-                    !TryConnectionStateTransition(WebSocketConnectionState.Reconnecting, WebSocketConnectionState.Connected))
+                // Transition from the current state only: trying Connecting first logged a rejected-transition warning on every reconnect
+                WebSocketConnectionState fromState = ConnectionState == WebSocketConnectionState.Reconnecting
+                    ? WebSocketConnectionState.Reconnecting
+                    : WebSocketConnectionState.Connecting;
+                if (!TryConnectionStateTransition(fromState, WebSocketConnectionState.Connected))
                 {
                     _logger.ConnectInternalInvalidStateTransitionError(_options.ServerUrl, ConnectionState, _reconnectAttempts, maxAttempts);
                     throw new InvalidOperationException($"Cannot transition to Connected from {ConnectionState}");
@@ -2453,14 +2476,14 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 16010,
         Level = LogLevel.Error,
-        Message = "TryTransitionConnectionState: invalid state transition at WebSocket {SocketUrl} from `{FromState}` to `{ToState}")]
+        Message = "TryTransitionConnectionState: invalid state transition at WebSocket {SocketUrl} from `{FromState}` to `{ToState}`")]
     public static partial void TryTransitionConnectionStateInvalidError(
         this ILogger logger, string socketUrl, WebSocketConnectionState fromState, WebSocketConnectionState toState);
 
     [LoggerMessage(
         EventId = 16020,
         Level = LogLevel.Warning,
-        Message = "TryTransitionConnectionState: state transition rejected at WebSocket {SocketUrl} from `{FromState}` to `{ToState} for original state `{OriginalState}`")]
+        Message = "TryTransitionConnectionState: state transition rejected at WebSocket {SocketUrl} from `{FromState}` to `{ToState}` for original state `{OriginalState}`")]
     public static partial void TryTransitionConnectionStateRejectedWarning(
         this ILogger logger, string socketUrl, WebSocketConnectionState fromState, WebSocketConnectionState toState, WebSocketConnectionState originalState);
 }
