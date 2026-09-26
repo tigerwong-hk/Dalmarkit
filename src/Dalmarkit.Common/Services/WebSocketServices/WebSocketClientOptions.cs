@@ -80,6 +80,16 @@ public class WebSocketClientOptions
             throw new ArgumentException("Reconnect delay must be positive", nameof(Reconnection.DelayMilliseconds));
         }
 
+        if (Reconnection != null && !(Reconnection.BackoffMultiplier >= 1))
+        {
+            throw new ArgumentException("Reconnect backoff multiplier must be at least 1", nameof(Reconnection.BackoffMultiplier));
+        }
+
+        if (Reconnection?.MaxDelayMilliseconds < Reconnection?.DelayMilliseconds)
+        {
+            throw new ArgumentException("Reconnect maximum delay must not be less than the reconnect delay", nameof(Reconnection.MaxDelayMilliseconds));
+        }
+
         _ = Guard.NotNullOrWhiteSpace(RequestIdPropertyName, nameof(RequestIdPropertyName));
 
         if (RequestTimeoutMilliseconds < 0)
@@ -111,5 +121,26 @@ public class WebSocketClientOptions
     {
         public int MaxAttempts { get; set; } = 3;
         public int DelayMilliseconds { get; set; } = 5000;
+
+        /// <summary>
+        /// Each reconnect delay after the first is the previous one times this; 1 keeps every delay at DelayMilliseconds
+        /// </summary>
+        public double BackoffMultiplier { get; set; } = 1.0;
+
+        /// <summary>
+        /// Upper bound on the reconnect delay; null for no bound
+        /// </summary>
+        public int? MaxDelayMilliseconds { get; set; }
+
+        /// <summary>
+        /// The delay before a reconnect attempt: DelayMilliseconds times BackoffMultiplier to the power of the attempt
+        /// number minus 1, capped at MaxDelayMilliseconds
+        /// </summary>
+        /// <param name="reconnectAttempt">The reconnect attempt number, starting at 1</param>
+        public int GetDelayMilliseconds(int reconnectAttempt)
+        {
+            double delayMilliseconds = DelayMilliseconds * Math.Pow(BackoffMultiplier, Math.Max(reconnectAttempt - 1, 0));
+            return (int)Math.Min(delayMilliseconds, MaxDelayMilliseconds ?? int.MaxValue);
+        }
     }
 }

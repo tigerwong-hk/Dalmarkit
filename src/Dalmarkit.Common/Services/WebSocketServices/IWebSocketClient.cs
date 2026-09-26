@@ -17,6 +17,16 @@ public interface IWebSocketClient : IDisposable
 
     Task ConnectAsync(CancellationToken cancellationToken = default);
     Task ConnectAsync(Func<string>? getWebSocketServerUrl, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Connects, calling the factory before every attempt (the first connect and each reconnect) for the server URL.
+    /// The factory receives the attempt's connection-timeout token; an exception or timeout fails that attempt.
+    /// The URL it returns is never logged, so it may carry a credential. Named apart from ConnectAsync so that
+    /// ConnectAsync(null) stays unambiguous.
+    /// </summary>
+    /// <param name="getWebSocketServerUrlAsync">Returns the server URL for an attempt; null uses ServerUrl from the options</param>
+    /// <param name="cancellationToken">Cancels the first connect</param>
+    Task ConnectWithServerUrlFactoryAsync(Func<WebSocketConnectAttempt, CancellationToken, ValueTask<string>>? getWebSocketServerUrlAsync, CancellationToken cancellationToken = default);
     Task DisconnectAsync(CancellationToken cancellationToken = default);
     Task<TResponse?> SendJsonRpc2RequestAsync<TParams, TResponse>(JsonRpc2RequestDto<TParams> request, CancellationToken cancellationToken = default)
         where TResponse : class;
