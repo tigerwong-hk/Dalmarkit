@@ -154,7 +154,7 @@ public class WebSocketClient : IWebSocketClient
     public virtual async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         // Through the legacy overload, so a subclass that overrides it still handles this call
-        await ConnectAsync((Func<string>?)null, cancellationToken).ConfigureAwait(false);
+        await ConnectAsync(null, cancellationToken).ConfigureAwait(false);
     }
 
     public virtual async Task ConnectAsync(Func<string>? getWebSocketServerUrl = null, CancellationToken cancellationToken = default)
@@ -163,10 +163,10 @@ public class WebSocketClient : IWebSocketClient
             ? null
             : (_, _) => ValueTask.FromResult(getWebSocketServerUrl());
 
-        await ConnectAsync(getWebSocketServerUrlAsync, cancellationToken).ConfigureAwait(false);
+        await ConnectWithServerUrlFactoryAsync(getWebSocketServerUrlAsync, cancellationToken).ConfigureAwait(false);
     }
 
-    public virtual async Task ConnectAsync(Func<WebSocketConnectAttempt, CancellationToken, ValueTask<string>>? getWebSocketServerUrlAsync, CancellationToken cancellationToken = default)
+    public virtual async Task ConnectWithServerUrlFactoryAsync(Func<WebSocketConnectAttempt, CancellationToken, ValueTask<string>>? getWebSocketServerUrlAsync, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
 
@@ -547,12 +547,15 @@ public class WebSocketClient : IWebSocketClient
         long connectionId;
         try
         {
-            // Read once: ConnectAsync can replace the factory while this attempt runs
+            // Read once: ConnectWithServerUrlFactoryAsync can replace the factory while this attempt runs
             Func<WebSocketConnectAttempt, CancellationToken, ValueTask<string>>? getWebSocketServerUrlAsync = _getWebSocketServerUrlAsync;
+            // _reconnectAttempts is reset only by a successful connect, so after the reconnection loop gives up it still
+            // holds the last attempt number; a new manual connect is attempt 0
+            bool isReconnect = ConnectionState == WebSocketConnectionState.Reconnecting;
             string webSocketServerUrl = getWebSocketServerUrlAsync == null
                 ? _options.ServerUrl
                 : await getWebSocketServerUrlAsync(
-                    new WebSocketConnectAttempt(_reconnectAttempts, ConnectionState == WebSocketConnectionState.Reconnecting),
+                    new WebSocketConnectAttempt(isReconnect ? _reconnectAttempts : 0, isReconnect),
                     connectionTimeoutCts.Token).ConfigureAwait(false);
             await _clientWebSocket.ConnectAsync(new Uri(webSocketServerUrl), connectionTimeoutCts.Token).ConfigureAwait(false);
 
