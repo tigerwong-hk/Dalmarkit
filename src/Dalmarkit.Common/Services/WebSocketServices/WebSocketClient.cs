@@ -153,7 +153,8 @@ public class WebSocketClient : IWebSocketClient
 
     public virtual async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
-        await ConnectAsync((Func<WebSocketConnectAttempt, CancellationToken, ValueTask<string>>?)null, cancellationToken).ConfigureAwait(false);
+        // Through the legacy overload, so a subclass that overrides it still handles this call
+        await ConnectAsync((Func<string>?)null, cancellationToken).ConfigureAwait(false);
     }
 
     public virtual async Task ConnectAsync(Func<string>? getWebSocketServerUrl = null, CancellationToken cancellationToken = default)
