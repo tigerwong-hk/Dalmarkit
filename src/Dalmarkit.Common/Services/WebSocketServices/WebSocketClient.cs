@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -1053,7 +1054,10 @@ public class WebSocketClient : IWebSocketClient
                 ValueWebSocketReceiveResult result = await clientWebSocket.ReceiveAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    _logger.ReceiveMessagesCloseMessageReceivedWarning(_options.ServerUrl, connectionId);
+                    // The peer's close status and description are on the socket once its close frame is received
+                    WebSocketCloseStatus? closeStatus = clientWebSocket.CloseStatus;
+                    string? closeStatusDescription = clientWebSocket.CloseStatusDescription;
+                    _logger.ReceiveMessagesCloseMessageReceivedWarning(_options.ServerUrl, connectionId, closeStatus, closeStatusDescription);
 
                     try
                     {
@@ -1064,7 +1068,7 @@ public class WebSocketClient : IWebSocketClient
                         _logger.ReceiveMessagesCloseOutputException(_options.ServerUrl, connectionId, ex);
                     }
 
-                    await HandleDisconnectionAsync(connectionId, "Close message received", cancellationToken).ConfigureAwait(false);
+                    await HandleDisconnectionAsync(connectionId, DescribeReceivedClose(closeStatus, closeStatusDescription), cancellationToken).ConfigureAwait(false);
 
                     return;
                 }
@@ -1400,6 +1404,28 @@ public class WebSocketClient : IWebSocketClient
             _receiveMessageCts?.Dispose();
             _receiveMessageCts = null;
         }
+    }
+
+    /// <summary>
+    /// The disconnect status for a close frame from the peer. It keeps the "Close message received" prefix and adds the
+    /// peer's close status, as its number and, when .NET defines one, its name, and its description when present.
+    /// </summary>
+    /// <param name="closeStatus">The peer's close status, or null when its close frame had none</param>
+    /// <param name="closeStatusDescription">The peer's close status description, or null or empty when it sent none</param>
+    private static string DescribeReceivedClose(WebSocketCloseStatus? closeStatus, string? closeStatusDescription)
+    {
+        if (closeStatus is not WebSocketCloseStatus status)
+        {
+            return "Close message received";
+        }
+
+        string code = Enum.IsDefined(status)
+            ? string.Create(CultureInfo.InvariantCulture, $"{(int)status} {status}")
+            : ((int)status).ToString(CultureInfo.InvariantCulture);
+
+        return string.IsNullOrEmpty(closeStatusDescription)
+            ? $"Close message received with close status {code}"
+            : $"Close message received with close status {code} and status description `{closeStatusDescription}`";
     }
 
     private bool TryConnectionStateTransition(WebSocketConnectionState fromState, WebSocketConnectionState toState)
@@ -2203,9 +2229,9 @@ public static partial class WebSocketClientLogs
     [LoggerMessage(
         EventId = 11020,
         Level = LogLevel.Warning,
-        Message = "ReceiveMessages: close message at WebSocket {SocketUrl} with connection id {ConnectionID}")]
+        Message = "ReceiveMessages: close message at WebSocket {SocketUrl} with connection id {ConnectionID}, close status {CloseStatus} and status description `{StatusDescription}`")]
     public static partial void ReceiveMessagesCloseMessageReceivedWarning(
-        this ILogger logger, string socketUrl, long connectionId);
+        this ILogger logger, string socketUrl, long connectionId, WebSocketCloseStatus? closeStatus, string? statusDescription);
 
     [LoggerMessage(
         EventId = 11030,
