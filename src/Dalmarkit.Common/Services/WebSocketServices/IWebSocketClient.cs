@@ -48,4 +48,8 @@ public readonly struct WebSocketReceivedMessage<TData>
 {
     public required TData Data { get; init; }
     public required DateTimeOffset ReceivedAt { get; init; }
+    /// <summary>
+    /// The frame exactly as received; re-serializing <see cref="Data"/> re-escapes strings (for example '+' as \u002B)
+    /// </summary>
+    public string? Text { get; init; }
 }

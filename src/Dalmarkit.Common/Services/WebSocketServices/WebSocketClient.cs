@@ -949,7 +949,8 @@ public class WebSocketClient : IWebSocketClient
                 WebSocketReceivedMessage<JsonNode> channelMessage = new()
                 {
                     Data = messageJson.DeepClone(),
-                    ReceivedAt = DateTimeOffset.UtcNow
+                    ReceivedAt = DateTimeOffset.UtcNow,
+                    Text = textMessage
                 };
 
                 try
