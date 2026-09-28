@@ -292,6 +292,13 @@ public abstract class ClientWebSocketServiceBase(
 
     protected virtual async Task ReceiveTextMessagesAsync(ChannelReader<WebSocketReceivedMessage<JsonNode>> channelReader, Func<JsonNode, Task<bool>> processReceiveTextMessage, CancellationToken cancellationToken = default)
     {
+        await ReceiveMessagesAsync(channelReader,
+            async (message) => await processReceiveTextMessage(message.Data).ConfigureAwait(false),
+        cancellationToken).ConfigureAwait(false);
+    }
+
+    protected virtual async Task ReceiveMessagesAsync(ChannelReader<WebSocketReceivedMessage<JsonNode>> channelReader, Func<WebSocketReceivedMessage<JsonNode>, Task<bool>> processReceivedMessage, CancellationToken cancellationToken = default)
+    {
         try
         {
             while (await channelReader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
@@ -308,7 +315,7 @@ public abstract class ClientWebSocketServiceBase(
 
                     try
                     {
-                        _ = await processReceiveTextMessage(receivedTextMessage.Data).ConfigureAwait(false);
+                        _ = await processReceivedMessage(receivedTextMessage).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -337,8 +344,8 @@ public abstract class ClientWebSocketServiceBase(
 
     protected virtual async Task ReceiveWebSocketTextMessagesAsync(CancellationToken cancellationToken = default)
     {
-        await ReceiveTextMessagesAsync(ActiveWebSocketClient.TextMessageReader,
-            async (message) => await ProcessServerNotificationAsync(message, cancellationToken).ConfigureAwait(false),
+        await ReceiveMessagesAsync(ActiveWebSocketClient.TextMessageReader,
+            async (message) => await ProcessServerNotificationMessageAsync(message, cancellationToken).ConfigureAwait(false),
         cancellationToken).ConfigureAwait(false);
     }
 
@@ -881,6 +888,17 @@ public abstract class ClientWebSocketServiceBase(
     protected abstract Task NotifyWebSocketConnectionState(WebSocketConnectionState webSocketConnectionState, string? key = default, CancellationToken cancellationToken = default);
 
     protected abstract Task<bool> ProcessServerNotificationAsync(JsonNode messageJson, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Override to read the frame as received (<see cref="WebSocketReceivedMessage{TData}.Text"/>) rather than only its parsed JSON
+    /// </summary>
+    /// <param name="message">The received message</param>
+    /// <param name="cancellationToken">The cancellation token</param>
+    /// <returns>Whether the message was processed</returns>
+    protected virtual Task<bool> ProcessServerNotificationMessageAsync(WebSocketReceivedMessage<JsonNode> message, CancellationToken cancellationToken = default)
+    {
+        return ProcessServerNotificationAsync(message.Data, cancellationToken);
+    }
 
     protected abstract bool ReceiveChannelNotificationTaskStart(string channelName, Channel<WebSocketReceivedMessage<JsonNode>> receiveChannel);
 
