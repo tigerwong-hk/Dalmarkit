@@ -281,13 +281,20 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
         (byte[] buffer, int length, bool exceeded) = await ReadErrorBodyAsync(httpResponse.Content, cancellationToken);
         ReadOnlyMemory<byte> errorBody = buffer.AsMemory(0, length);
 
+        // The span overload rejects a UTF-8 byte-order mark, which the previous stream-based read skipped, so strip it
+        ReadOnlySpan<byte> json = errorBody.Span;
+        if (json.StartsWith(Encoding.UTF8.Preamble))
+        {
+            json = json[Encoding.UTF8.Preamble.Length..];
+        }
+
         TErrorResponse? errorResponse = null;
         JsonException? parseError = null;
-        if (!exceeded && !IsBlank(errorBody.Span))
+        if (!exceeded && !IsBlank(json))
         {
             try
             {
-                errorResponse = JsonSerializer.Deserialize<TErrorResponse>(errorBody.Span, WebOptions);
+                errorResponse = JsonSerializer.Deserialize<TErrorResponse>(json, WebOptions);
             }
             catch (JsonException ex)
             {
