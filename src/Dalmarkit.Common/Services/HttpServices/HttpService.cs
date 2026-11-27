@@ -279,22 +279,16 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
         }
 
         (byte[] buffer, int length, bool exceeded) = await ReadErrorBodyAsync(httpResponse.Content, cancellationToken);
-        ReadOnlyMemory<byte> errorBody = buffer.AsMemory(0, length);
-
-        // The span overload rejects a UTF-8 byte-order mark, which the previous stream-based read skipped, so strip it
-        ReadOnlySpan<byte> json = errorBody.Span;
-        if (json.StartsWith(Encoding.UTF8.Preamble))
-        {
-            json = json[Encoding.UTF8.Preamble.Length..];
-        }
 
         TErrorResponse? errorResponse = null;
         JsonException? parseError = null;
-        if (!exceeded && !IsBlank(json))
+        if (!exceeded && !IsBlank(buffer, length))
         {
             try
             {
-                errorResponse = JsonSerializer.Deserialize<TErrorResponse>(json, WebOptions);
+                // Async stream overload skips a leading UTF-8 byte-order mark and wraps the buffer so no copy.
+                await using MemoryStream errorStream = new(buffer, 0, length, writable: false);
+                errorResponse = await JsonSerializer.DeserializeAsync<TErrorResponse>(errorStream, WebOptions, cancellationToken);
             }
             catch (JsonException ex)
             {
@@ -349,8 +343,19 @@ public class HttpService(HttpClient httpClient, ILogger<HttpService> logger) : I
         return (body.GetBuffer(), (int)Math.Min(body.Length, MaxErrorBodyBytes), exceeded);
     }
 
-    private static bool IsBlank(ReadOnlySpan<byte> body)
+    /// <summary>
+    /// Whether the body holds nothing but JSON whitespace, after an optional UTF-8 byte-order mark.
+    /// </summary>
+    /// <param name="buffer">Buffer holding the error body bytes read.</param>
+    /// <param name="length">Number of body bytes in <paramref name="buffer"/>.</param>
+    private static bool IsBlank(byte[] buffer, int length)
     {
+        ReadOnlySpan<byte> body = buffer.AsSpan(0, length);
+        if (body.StartsWith(Encoding.UTF8.Preamble))
+        {
+            body = body[Encoding.UTF8.Preamble.Length..];
+        }
+
         foreach (byte b in body)
         {
             if (b is not ((byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n'))
